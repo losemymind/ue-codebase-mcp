@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - stable
+      - release/**
+      - codex/**
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - name: Install from lockfile without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Verify
+        run: npm run ci
+      - name: Release policy checks
+        run: npm run release:check
+

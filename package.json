@@ -1,0 +1,30 @@
+{
+  "name": "ue-codebase-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production foundation for a read-only UE 5.6 codebase MCP indexer.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "24.18.0",
+    "npm": "11.16.0"
+  },
+  "packageManager": "npm@11.16.0",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "workers/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "clean": "node tools/clean.mjs",
+    "ci": "npm run format:check && npm run lint && npm test && npm run build && npm run license:check && npm run sbom",
+    "format:check": "node tools/quality.mjs format",
+    "lint": "node tools/quality.mjs lint",
+    "license:check": "node tools/license-audit/check.mjs",
+    "release:check": "node tools/release/check.mjs",
+    "sbom": "node tools/sbom/generate.mjs",
+    "test": "node --test --test-reporter=spec"
+  }
+}
+
