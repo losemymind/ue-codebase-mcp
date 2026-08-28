@@ -276,7 +276,7 @@ Next work: P1-08 and P1-11 are unblocked at the interface level. P1-08 productio
 
 ## P1-11 — UE project, plugin, module, and target model
 
-Status: static parser implementation and synthetic gold tests complete on 2026-08-28; private Fork/project corpus acceptance remains pending.
+Status: static parser, synthetic gold tests, and real private-corpus audit complete on 2026-08-28; first-party HT rules parse fully, while third-party helper/base-rule attribution and human gold review remain pending.
 
 Deliverables:
 
@@ -285,24 +285,31 @@ Deliverables:
 - Public, private and dynamically loaded module dependencies with precise source path/line/column and normalized nested platform/configuration conditions.
 - Target type and `ExtraModuleNames` extraction with conditional provenance.
 - Explicit diagnostics for dependency expressions that cannot be statically reduced to literal module names; unsupported logic is not silently invented.
+- Bounded, non-executing corpus audit CLI with sanitized root-relative failures, aggregate reason counts, symlink exclusion and no `Content` traversal.
+- Real-syntax compatibility for UE descriptor comments/trailing commas/BOMs/source-build associations, repeated names with distinct module entries, unsupported condition diagnostics and C# verbatim-string matching.
 
 Verification commands and results:
 
 ```powershell
 node --test tests/unit/module-model.test.mjs
+node --test tests/unit/module-corpus-audit.test.mjs
 npm run ci
+npm run release:check
 ```
 
 - P1-11 synthetic gold suite: 4/4 passed, covering Public/Private/Dynamic dependencies, Win64 and configuration conditions, nested blocks, descriptor compatibility, target modules, comments and malformed input.
-- Full repository CI: 36/36 passed.
+- Updated P1-11 parser/audit suites: 9/9 passed. Full repository CI: 47/47 passed; build, boundary lint, permissive-license audit and zero-dependency CycloneDX SBOM generation passed. Release policy passed for `0.1.0`.
+- Real corpus after evidence-driven fixes: Engine+HT parsed 3,552/3,705 files (95.87%); HT project parsed 312/357 (87.39%); HT first-party `Source` parsed 16/16 (100%).
+- All 45 remaining HT hard failures are third-party plugin helper/platform `.Build.cs` fragments without a direct `ModuleRules` declaration. Computed dependencies and unsupported conditions remain explicit diagnostics.
 
 Known limitations and inputs:
 
 - The parser intentionally does not execute arbitrary C# rules. Helper functions, computed lists and condition forms outside the reviewed static subset are emitted as diagnostics and require the real corpus coverage report.
-- Private Engine/project `.uproject`, `.uplugin`, `Build.cs`, and `Target.cs` files plus approved gold expectations are required before claiming P1-11 production acceptance.
-- UE version-specific rule API drift is validated only when the real UE 5.6 Fork is available.
+- The real private Fork/project corpus is now available and audited, but it is from modified/partial working copies and cannot serve as clean pinned-revision G1 evidence.
+- Remaining full-scope hard failures are 103 non-direct `ModuleRules` files and 50 non-direct `TargetRules` files. These require helper/base-class attribution or explicit UE reviewer scope decisions; the parser will not execute C# or invent inheritance.
+- Named reviewers and approved gold expectations are still required. Detailed results are in `docs/progress/p1-11-real-corpus-audit.md`.
 
-Next work: feed module results into P1-08 coverage/P1-09 indexing and expand only from evidence in the private corpus. Phase 2 remains frozen.
+Next work: correlate descriptor/UBT module identities with indirect/helper rule files and obtain UE gold review; feed accepted module results into P1-08/P1-09 only after their gates. Phase 2 remains frozen.
 
 ## P1-08 — UE 5.6 compile database acquisition and validation
 

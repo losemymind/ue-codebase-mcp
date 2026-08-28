@@ -52,6 +52,22 @@ test('uproject/uplugin descriptors normalize modules, plugins and legacy platfor
   assert.deepEqual(plugin.modules[0].platform_allow_list, ['Win64']);
 });
 
+test('UE descriptors safely accept comments, trailing commas, BOM, and an empty source-build association', () => {
+  const project = parseDescriptor(`\uFEFF{
+    // Source-built projects may intentionally leave this empty.
+    "EngineAssociation": "",
+    "Modules": [{ "Name": "HTGame", "Type": "Runtime", }],
+  }`, 'HT.uproject');
+  assert.equal(project.engine_version, undefined);
+  assert.equal(project.modules[0].name, 'HTGame');
+
+  const plugin = parseDescriptor(JSON.stringify({ Modules: [
+    { Name: 'SharedModule', Type: 'Runtime' },
+    { Name: 'SharedModule', Type: 'UncookedOnly' },
+  ] }), 'Shared.uplugin');
+  assert.equal(plugin.modules.length, 2);
+});
+
 test('Target.cs parser captures target type, extra modules and platform conditions without executing source', () => {
   const target = parseTargetCs(`
 public class YihuanEditorTarget : TargetRules {
@@ -69,10 +85,36 @@ public class YihuanEditorTarget : TargetRules {
   assert.equal(target.extra_modules[1].condition, '(platform == Win64)');
 });
 
+test('unsupported rule conditions are explicit diagnostics instead of whole-file parse failures', () => {
+  const target = parseTargetCs(`
+public class FixtureTarget : TargetRules {
+  public FixtureTarget(TargetInfo Target) : base(Target) {
+    Type = TargetType.Editor;
+    if (Environment.GetEnvironmentVariable("FLAG") == "1") {
+      ExtraModuleNames.Add("OptionalModule");
+    }
+  }
+}`, 'Source/Fixture.Target.cs');
+  assert.equal(target.extra_modules[0].condition, '(unsupported)');
+  assert.deepEqual(target.diagnostics, [{ code: 'UNSUPPORTED_CONDITION_EXPRESSION', line: 5 }]);
+});
+
+test('rule matching ignores braces and doubled quotes inside C# verbatim strings', () => {
+  const target = parseTargetCs(`
+public class ExporterTarget : TargetRules {
+  public ExporterTarget(TargetInfo Target) : base(Target) {
+    string Command = @"echo ""{0}""";
+    if (Target.Platform == UnrealTargetPlatform.Win64) {
+      ExtraModuleNames.Add("Exporter");
+    }
+  }
+}`, 'Source/Exporter.Target.cs');
+  assert.equal(target.extra_modules[0].name, 'Exporter');
+});
+
 test('rules parser ignores comments and rejects malformed or oversized dynamic input', () => {
   const model = parseBuildCs(buildCs.replace('PrivateDependencyModuleNames.Add("Slate");', '// PrivateDependencyModuleNames.Add("Secret");\n        PrivateDependencyModuleNames.Add("Slate");'), 'Fixture.Build.cs');
   assert.ok(!model.dependencies.some(({ name }) => name === 'Secret'));
   assert.throws(() => parseBuildCs('public class X : ModuleRules { if (Target.Platform == UnrealTargetPlatform.Win64) {', 'X.Build.cs'));
   assert.throws(() => parseDescriptor('{bad json', 'Bad.uproject'));
 });
-

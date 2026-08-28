@@ -41,6 +41,7 @@ export interface TargetModel {
   target_type: 'Game' | 'Editor' | 'Client' | 'Server' | 'Program' | 'Unknown';
   extra_modules: Array<{ name: string; condition: string | null; source: SourceLocation }>;
   source_path: string;
+  diagnostics: Array<{ code: string; line: number }>;
 }
 
 interface ConditionalRange { start: number; end: number; expression: string }
@@ -102,11 +103,28 @@ function sanitizeCsharp(source: string): string {
 
 function matching(source: string, start: number, open: string, close: string): number {
   let depth = 0;
-  let inString = false;
+  let mode: 'code' | 'string' | 'verbatim-string' | 'char' = 'code';
   for (let index = start; index < source.length; index += 1) {
     const character = source[index];
-    if (character === '"' && source[index - 1] !== '\\') inString = !inString;
-    if (inString) continue;
+    const next = source[index + 1];
+    if (mode === 'string') {
+      if (character === '\\' && next !== undefined) { index += 1; continue; }
+      if (character === '"') mode = 'code';
+      continue;
+    }
+    if (mode === 'verbatim-string') {
+      if (character === '"' && next === '"') { index += 1; continue; }
+      if (character === '"') mode = 'code';
+      continue;
+    }
+    if (mode === 'char') {
+      if (character === '\\' && next !== undefined) { index += 1; continue; }
+      if (character === "'") mode = 'code';
+      continue;
+    }
+    if (character === '@' && next === '"') { mode = 'verbatim-string'; index += 1; continue; }
+    if (character === '"') { mode = 'string'; continue; }
+    if (character === "'") { mode = 'char'; continue; }
     if (character === open) depth += 1;
     if (character === close) {
       depth -= 1;
@@ -116,9 +134,9 @@ function matching(source: string, start: number, open: string, close: string): n
   return -1;
 }
 
-function normalizeCondition(expression: string): string {
+function normalizeCondition(expression: string): string | undefined {
   const compact = expression.replace(/\s+/g, ' ').trim();
-  if (compact.length === 0 || compact.length > 512 || /[;{}"']/.test(compact)) throw new TypeError('unsupported Build.cs condition');
+  if (compact.length === 0 || compact.length > 512 || /[;{}"']/.test(compact)) return undefined;
   return compact
     .replaceAll(/Target\.Platform\s*==\s*UnrealTargetPlatform\.([A-Za-z][A-Za-z0-9_]*)/g, 'platform == $1')
     .replaceAll(/Target\.Platform\s*!=\s*UnrealTargetPlatform\.([A-Za-z][A-Za-z0-9_]*)/g, 'platform != $1')
@@ -126,7 +144,7 @@ function normalizeCondition(expression: string): string {
     .replaceAll(/Target\.Configuration\s*!=\s*UnrealTargetConfiguration\.([A-Za-z][A-Za-z0-9_]*)/g, 'configuration != $1');
 }
 
-function conditionalRanges(source: string): ConditionalRange[] {
+function conditionalRanges(source: string, sourcePath: string, diagnostics: Array<{ code: string; line: number }>): ConditionalRange[] {
   const ranges: ConditionalRange[] = [];
   const pattern = /\bif\s*\(/g;
   for (const match of source.matchAll(pattern)) {
@@ -138,7 +156,9 @@ function conditionalRanges(source: string): ConditionalRange[] {
     if (source[brace] !== '{') continue;
     const end = matching(source, brace, '{', '}');
     if (end < 0) throw new TypeError('unbalanced Build.cs conditional block');
-    ranges.push({ start: brace + 1, end, expression: normalizeCondition(source.slice(openParen + 1, closeParen)) });
+    const expression = normalizeCondition(source.slice(openParen + 1, closeParen));
+    if (expression === undefined) diagnostics.push({ code: 'UNSUPPORTED_CONDITION_EXPRESSION', line: sourcePosition(source, match.index ?? 0, sourcePath).line });
+    ranges.push({ start: brace + 1, end, expression: expression ?? 'unsupported' });
   }
   return ranges;
 }
@@ -180,9 +200,9 @@ export function parseBuildCs(sourceText: string, sourcePath: string): BuildModul
   const source = sanitizeCsharp(sourceText.replaceAll('\r\n', '\n'));
   const classMatch = /\bclass\s+([A-Za-z][A-Za-z0-9_]*)\s*:\s*ModuleRules\b/.exec(source);
   if (!classMatch) throw new TypeError('Build.cs must declare one ModuleRules class');
-  const ranges = conditionalRanges(source);
   const dependencies: ModuleDependencyModel[] = [];
   const diagnostics: BuildModuleModel['diagnostics'] = [];
+  const ranges = conditionalRanges(source, sourcePath, diagnostics);
   const visibility: Record<string, ModuleDependencyVisibility> = {
     PublicDependencyModuleNames: 'public', PrivateDependencyModuleNames: 'private', DynamicallyLoadedModuleNames: 'dynamic',
   };
@@ -209,10 +229,59 @@ function descriptorPlatforms(value: unknown, field: string): string[] {
   return [...new Set(value)].sort();
 }
 
+function normalizeDescriptorJson(input: string): string {
+  const source = input.startsWith('\uFEFF') ? input.slice(1) : input;
+  let withoutComments = '';
+  let mode: 'code' | 'string' | 'line-comment' | 'block-comment' = 'code';
+  for (let index = 0; index < source.length; index += 1) {
+    const current = source[index];
+    const next = source[index + 1];
+    if (mode === 'code') {
+      if (current === '/' && next === '/') { withoutComments += '  '; index += 1; mode = 'line-comment'; continue; }
+      if (current === '/' && next === '*') { withoutComments += '  '; index += 1; mode = 'block-comment'; continue; }
+      withoutComments += current;
+      if (current === '"') mode = 'string';
+      continue;
+    }
+    if (mode === 'string') {
+      withoutComments += current;
+      if (current === '\\' && next !== undefined) { withoutComments += next; index += 1; continue; }
+      if (current === '"') mode = 'code';
+      continue;
+    }
+    if (mode === 'line-comment') {
+      withoutComments += current === '\n' ? '\n' : ' ';
+      if (current === '\n') mode = 'code';
+      continue;
+    }
+    if (current === '*' && next === '/') { withoutComments += '  '; index += 1; mode = 'code'; }
+    else withoutComments += current === '\n' ? '\n' : ' ';
+  }
+  if (mode === 'string' || mode === 'block-comment') throw new TypeError('descriptor JSON is invalid');
+
+  let output = '';
+  let inString = false;
+  for (let index = 0; index < withoutComments.length; index += 1) {
+    const current = withoutComments[index];
+    if (current === '"') {
+      let slashes = 0;
+      for (let cursor = index - 1; cursor >= 0 && withoutComments[cursor] === '\\'; cursor -= 1) slashes += 1;
+      if (slashes % 2 === 0) inString = !inString;
+    }
+    if (!inString && current === ',') {
+      let cursor = index + 1;
+      while (/\s/.test(withoutComments[cursor] ?? '')) cursor += 1;
+      if (withoutComments[cursor] === '}' || withoutComments[cursor] === ']') { output += ' '; continue; }
+    }
+    output += current;
+  }
+  return output;
+}
+
 export function parseDescriptor(json: string, sourcePath: string): ProjectDescriptorModel {
   if (Buffer.byteLength(json, 'utf8') > 1024 * 1024) throw new TypeError('descriptor exceeds 1 MiB');
   let value: unknown;
-  try { value = JSON.parse(json); } catch { throw new TypeError('descriptor JSON is invalid'); }
+  try { value = JSON.parse(normalizeDescriptorJson(json)); } catch { throw new TypeError('descriptor JSON is invalid'); }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError('descriptor must be an object');
   const object = value as Record<string, unknown>;
   const modulesValue = object.Modules ?? [];
@@ -228,7 +297,8 @@ export function parseDescriptor(json: string, sourcePath: string): ProjectDescri
       platform_deny_list: descriptorPlatforms(module.PlatformDenyList ?? module.BlacklistPlatforms, 'PlatformDenyList'),
     });
   });
-  if (new Set(modules.map(({ name }) => name)).size !== modules.length) throw new TypeError('descriptor module names must be unique');
+  const moduleKeys = modules.map((module) => JSON.stringify(module));
+  if (new Set(moduleKeys).size !== moduleKeys.length) throw new TypeError('descriptor module entries must be unique');
   const pluginsValue = object.Plugins ?? [];
   if (!Array.isArray(pluginsValue) || pluginsValue.length > 512) throw new TypeError('descriptor Plugins is invalid');
   const plugins = pluginsValue.map((entry) => {
@@ -246,7 +316,7 @@ export function parseDescriptor(json: string, sourcePath: string): ProjectDescri
     modules: Object.freeze(modules) as DescriptorModuleModel[],
     plugins: Object.freeze(plugins) as Array<{ name: string; enabled: boolean }>,
   };
-  if (object.EngineAssociation !== undefined) model.engine_version = descriptorString(object.EngineAssociation, 'EngineAssociation');
+  if (object.EngineAssociation !== undefined && object.EngineAssociation !== '') model.engine_version = descriptorString(object.EngineAssociation, 'EngineAssociation');
   return Object.freeze(model);
 }
 
@@ -256,11 +326,11 @@ export function parseTargetCs(sourceText: string, sourcePath: string): TargetMod
   if (!classMatch) throw new TypeError('Target.cs must declare one TargetRules class ending in Target');
   const typeMatch = /\bType\s*=\s*TargetType\.([A-Za-z][A-Za-z0-9_]*)\s*;/.exec(source);
   const targetType = typeMatch && ['Game', 'Editor', 'Client', 'Server', 'Program'].includes(typeMatch[1]) ? typeMatch[1] as TargetModel['target_type'] : 'Unknown';
-  const ranges = conditionalRanges(source);
+  const diagnostics: TargetModel['diagnostics'] = [];
+  const ranges = conditionalRanges(source, sourcePath, diagnostics);
   const extraModules = [];
   for (const call of calls(source, 'ExtraModuleNames')) {
     for (const name of strings(call.arguments)) extraModules.push(Object.freeze({ name, condition: conditionAt(call.offset, ranges), source: sourcePosition(source, call.offset, sourcePath) }));
   }
-  return Object.freeze({ name: classMatch[1], target_type: targetType, extra_modules: Object.freeze(extraModules), source_path: sourcePath });
+  return Object.freeze({ name: classMatch[1], target_type: targetType, extra_modules: Object.freeze(extraModules), source_path: sourcePath, diagnostics: Object.freeze(diagnostics) as TargetModel['diagnostics'] });
 }
-
