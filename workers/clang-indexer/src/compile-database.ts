@@ -240,7 +240,8 @@ export function buildUbtCompileDatabaseInvocation(request: UbtCompileDatabaseReq
     cwd: workspace,
     args: Object.freeze([
       '-Mode=GenerateClangDatabase', `-Project=${project}`, request.target, request.platform, request.configuration,
-      `-OutputDir=${path.dirname(output)}`, '-NoMutex', '-Unattended',
+      `-OutputDir=${path.dirname(output)}`, `-OutputFilename=${path.basename(output)}`,
+      '-NoExecCodeGenActions', '-NoMutex', '-Unattended',
     ]),
   });
 }

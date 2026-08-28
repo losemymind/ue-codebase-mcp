@@ -306,7 +306,7 @@ Next work: feed module results into P1-08 coverage/P1-09 indexing and expand onl
 
 ## P1-08 — UE 5.6 compile database acquisition and validation
 
-Status: interface, normalization, and synthetic validation complete on 2026-08-28; real UE 5.6 generation and the 99% TU gate are externally blocked.
+Status: interface, normalization, synthetic validation, and real-environment preflight complete on 2026-08-28; real generation is blocked by the absent compatible x64 Clang installation, and the 99% TU gate has not run.
 
 Deliverables:
 
@@ -315,24 +315,34 @@ Deliverables:
 - Clang/clang-cl-only validation, workspace confinement, duplicate TU rejection, deterministic normalized hashes, output-flag removal, and include/forced-include/macro extraction.
 - Explicit, bounded response-file expansion supplied by a workspace-confined caller map; missing, escaping, nested-too-deep or oversized response files fail fast.
 - Reproducible TU coverage report separating raw coverage from named/reasoned/risk-documented exemptions and computing the fixed 99% gate without lowering it.
+- Fork-verified UBT arguments now include explicit `-OutputFilename=compile_commands.json` and `-NoExecCodeGenActions` so output naming is deterministic and the acquisition step does not run code-generation actions.
+- A sanitized real-environment report records the supplied local Engine/project inputs, SVN revision state, Fork version/toolchain requirements, controlled UBT attempt and exact continuation conditions.
 
 Verification commands and results:
 
 ```powershell
 node --test tests/unit/compile-database.test.mjs
 npm run ci
+npm run release:check
 ```
 
 - P1-08 synthetic suite: 6/6 passed for Windows quoting, normalization, macro/include/forced-include extraction, response files, escape/driver/duplicate rejection, coverage accounting and fixed UBT arguments.
-- No real coverage percentage is claimed.
+- The real UBT executable and `HTEditor Win64 Development` target were reached, then failed closed with `Clang x64 must be installed in order to build this target.` No output directory or compile database was created.
+- Fork source/config inspection established minimum Clang `18.1.3`, preferred Clang `18.x`/`19.1.x`, and the suggested Visual Studio component ID `Microsoft.VisualStudio.Component.VC.Llvm.Clang`.
+- Full repository CI passed 42/42 tests after the Fork-specific invocation update; build, boundary lint, permissive-license audit and zero-dependency CycloneDX SBOM generation passed. Release policy passed for `0.1.0`.
+- No real coverage percentage is claimed because the generator did not produce an artifact.
 
 Known limitations and exact external inputs:
 
-- Required: private UE 5.6 Engine Fork SVN revision, real `UnrealBuildTool.exe` location, validated Editor/Target invocation, project `.uproject`, and the selected Engine/game target matrix.
+- Received and validated: local Engine/project roots, matching SVN working-copy URLs, UE `5.6.1` Fork, real UBT executable, `HT.uproject`, and an available `HTEditor` target.
+- Blocking host input: an x64 Clang accepted by the Fork is not installed in any UBT-discovered location. Installing the Fork-suggested Visual Studio LLVM component is an explicit host mutation and was not performed implicitly.
+- Working-copy limitation: Engine reports `24636M`; project reports `85567MP`. Both contain local modifications and the project is partial/sparse, so they may support diagnostics but not clean pinned-revision G1 evidence.
+- Transport-policy limitation: the supplied SVN roots use plaintext HTTP, while the approved production configuration accepts only allowlisted HTTPS or `svn+ssh`. No insecure production exception was fabricated.
+- Still required: approved clean Engine/project revisions and target matrix/reviewer confirmation before final coverage acceptance.
 - Required: a full workspace scan defining the expected TU denominator and named reviewers for any exemption. Synthetic fixture approval names are test data only.
-- The Fork may use additional UBT output flags or response-file encoding. Those must be added from captured real commands, never guessed as global compiler flags.
+- Detailed evidence and the reproducible command are in `docs/progress/p1-08-real-environment-preflight.md`.
 
-Next work: run the real generator and coverage report when those inputs arrive. P1-09 production indexing remains blocked by this gate; unrelated Phase 1 work may continue.
+Next work: after a compatible Clang is explicitly installed/provided, rerun the recorded generator command and coverage report. P1-09 production indexing remains blocked by this gate; unrelated Phase 1 work may continue.
 
 ## P1-03 — versioned configuration and secret-reference model
 

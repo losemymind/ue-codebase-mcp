@@ -75,6 +75,8 @@ test('UBT generation invocation is fixed, typed, workspace-confined, and contain
   });
   assert.equal(path.basename(invocation.executable), 'UnrealBuildTool.exe');
   assert.ok(invocation.args.includes('-Mode=GenerateClangDatabase'));
+  assert.ok(invocation.args.includes('-NoExecCodeGenActions'));
+  assert.ok(invocation.args.includes('-OutputFilename=compile_commands.json'));
   assert.ok(invocation.args.every((argument) => !/[\r\n\0]/.test(argument)));
   assert.throws(() => buildUbtCompileDatabaseInvocation({ ...invocation, workspace_root: workspace, ubt_executable: 'cmd.exe' }));
 });
