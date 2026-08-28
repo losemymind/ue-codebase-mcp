@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ue-codebase-mcp.invalid/provider/v1",
+  "title": "UE Codebase MCP OpenAI-compatible provider configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "id",
+    "kind",
+    "endpoint",
+    "allowed_hosts",
+    "credential",
+    "embedding",
+    "data_processing_approved",
+    "enabled"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ue-codebase-mcp/provider"
+    },
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "common-v1.schema.json#/$defs/identifier"
+    },
+    "kind": {
+      "const": "openai-compatible"
+    },
+    "endpoint": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "allowed_hosts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(?=.{1,253}$)(?!-)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+      }
+    },
+    "credential": {
+      "$ref": "common-v1.schema.json#/$defs/secretCredential"
+    },
+    "embedding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "dimensions"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+        },
+        "dimensions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "rerank": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+        }
+      }
+    },
+    "data_processing_approved": {
+      "type": "boolean"
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data_processing_approved": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}

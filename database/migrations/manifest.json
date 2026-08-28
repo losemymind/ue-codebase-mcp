@@ -1,0 +1,17 @@
+{
+  "schema": "ue_mcp",
+  "migrations": [
+    {
+      "version": 1,
+      "name": "bootstrap",
+      "up": "0001_bootstrap.up.sql",
+      "down": "0001_bootstrap.down.sql"
+    },
+    {
+      "version": 2,
+      "name": "phase_1_core",
+      "up": "0002_phase_1_core.up.sql",
+      "down": "0002_phase_1_core.down.sql"
+    }
+  ]
+}

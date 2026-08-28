@@ -1,0 +1,12 @@
+{
+  "name": "@ue-codebase-mcp/index-coordinator",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": "./src/workspace.ts",
+  "engines": {
+    "node": "24.18.0"
+  }
+}
+

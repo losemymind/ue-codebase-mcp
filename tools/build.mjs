@@ -8,12 +8,33 @@ for (const file of ['VERSION', 'LICENSE_POLICY.md', 'SECURITY.md']) {
   await cp(path.join(root, file), path.join(dist, file));
 }
 const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+const { CONFIG_VERSION, loadConfigFile } = await import('../packages/config/src/index.ts');
+await import('../packages/auth/src/index.ts');
+await import('../workers/svn-adapter/src/index.ts');
+await import('../workers/windows-agent/src/index.ts');
+await import('../services/index-coordinator/src/workspace.ts');
+await import('../workers/clang-indexer/src/module-model.ts');
+await import('../workers/clang-indexer/src/compile-database.ts');
+const configExamples = ['project', 'repository', 'provider', 'preset'];
+for (const name of configExamples) {
+  await loadConfigFile(path.join(root, 'configs', 'examples', `${name}-v1.yaml`));
+}
+const configPackageDist = path.join(dist, 'packages', 'config');
+await mkdir(path.join(configPackageDist, 'src'), { recursive: true });
+await cp(path.join(root, 'packages', 'config', 'package.json'), path.join(configPackageDist, 'package.json'));
+await cp(path.join(root, 'packages', 'config', 'src', 'index.ts'), path.join(configPackageDist, 'src', 'index.ts'));
+await cp(path.join(root, 'configs'), path.join(dist, 'configs'), { recursive: true, force: true });
+for (const source of ['packages/auth', 'services/index-coordinator', 'workers/clang-indexer', 'workers/svn-adapter', 'workers/windows-agent']) {
+  await cp(path.join(root, source), path.join(dist, source), { recursive: true, force: true });
+}
+await cp(path.join(root, 'deploy', 'windows-service'), path.join(dist, 'deploy', 'windows-service'), { recursive: true, force: true });
 const manifest = {
   name: packageJson.name,
   version: packageJson.version,
   node: packageJson.engines.node,
+  typescriptRuntime: 'node-native-type-stripping',
+  configurationSchemaVersion: CONFIG_VERSION,
   sourceDateEpoch: process.env.SOURCE_DATE_EPOCH ?? '0',
 };
 await writeFile(path.join(dist, 'build-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 console.log(`built ${manifest.name}@${manifest.version}`);
-

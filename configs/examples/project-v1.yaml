@@ -1,0 +1,11 @@
+---
+schema: ue-codebase-mcp/project
+version: 1
+id: yihuan
+slug: yihuan
+name: Yihuan UE 5.6
+ue_version: '5.6'
+status: active
+repository_ids:
+  - yihuan-engine
+  - yihuan-game

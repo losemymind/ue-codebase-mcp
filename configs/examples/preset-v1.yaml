@@ -1,0 +1,15 @@
+---
+schema: ue-codebase-mcp/preset
+version: 1
+id: yihuan-editor-development
+project_id: yihuan
+kind: ubt_build
+enabled: false
+target: YihuanEditor
+platform: Win64
+configuration: Development
+clean: false
+resource_policy:
+  timeout_seconds: 7200
+  max_memory_mb: 65536
+  max_cpu_percent: 75

@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!DOCTYPE info [<!ENTITY secret SYSTEM "file:///private/secret">]>
+<info><entry kind="dir" path="trunk" revision="42"><url>&secret;</url></entry></info>

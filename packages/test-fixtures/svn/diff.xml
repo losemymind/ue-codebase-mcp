@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diff>
+  <paths>
+    <path item="modified" kind="file">https://svn.example.invalid/repository/trunk/Source/Fixture.cpp</path>
+  </paths>
+</diff>

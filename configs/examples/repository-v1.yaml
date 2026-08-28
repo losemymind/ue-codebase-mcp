@@ -1,0 +1,18 @@
+---
+schema: ue-codebase-mcp/repository
+version: 1
+id: yihuan-engine
+project_id: yihuan
+kind: svn
+role: engine
+canonical_url: https://svn.example.invalid/ue56-engine
+credential:
+  secret_ref: secret://corp-vault/svn/yihuan-engine-readonly
+enabled: false
+branches:
+  - name: trunk
+    svn_url: https://svn.example.invalid/ue56-engine/trunk
+    tracking_policy: continuous
+  - name: stable
+    svn_url: https://svn.example.invalid/ue56-engine/branches/stable
+    tracking_policy: continuous

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ue-codebase-mcp.invalid/repository/v1",
+  "title": "UE Codebase MCP SVN repository configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "id",
+    "project_id",
+    "kind",
+    "role",
+    "canonical_url",
+    "credential",
+    "enabled",
+    "branches"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ue-codebase-mcp/repository"
+    },
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "common-v1.schema.json#/$defs/identifier"
+    },
+    "project_id": {
+      "$ref": "common-v1.schema.json#/$defs/identifier"
+    },
+    "kind": {
+      "const": "svn"
+    },
+    "role": {
+      "enum": [
+        "engine",
+        "game",
+        "plugin"
+      ]
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^(https|svn\\+ssh)://"
+    },
+    "credential": {
+      "$ref": "common-v1.schema.json#/$defs/secretCredential"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "branches": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "svn_url",
+          "tracking_policy"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "common-v1.schema.json#/$defs/identifier"
+          },
+          "svn_url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^(https|svn\\+ssh)://"
+          },
+          "tracking_policy": {
+            "const": "continuous"
+          }
+        }
+      }
+    }
+  }
+}

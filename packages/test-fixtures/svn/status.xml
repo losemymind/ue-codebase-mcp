@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<status>
+  <target path="C:/fixture-wc">
+    <entry path="C:/fixture-wc/Source/Fixture.cpp">
+      <wc-status item="modified" props="none" revision="42" />
+    </entry>
+  </target>
+</status>

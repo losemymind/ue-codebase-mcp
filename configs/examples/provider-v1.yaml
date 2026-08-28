@@ -1,0 +1,17 @@
+---
+schema: ue-codebase-mcp/provider
+version: 1
+id: approved-embedding
+kind: openai-compatible
+endpoint: https://provider.example.invalid/v1
+allowed_hosts:
+  - provider.example.invalid
+credential:
+  secret_ref: secret://corp-vault/providers/approved-embedding
+embedding:
+  model: approved-embedding-model
+  dimensions: 1536
+rerank:
+  model: approved-rerank-model
+data_processing_approved: false
+enabled: false

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<info>
+  <entry kind="dir" path="trunk" revision="42">
+    <url>https://svn.example.invalid/repository/trunk</url>
+    <repository>
+      <root>https://svn.example.invalid/repository</root>
+      <uuid>12345678-1234-1234-1234-123456789abc</uuid>
+    </repository>
+    <commit revision="40">
+      <author>fixture-user</author>
+      <date>2026-08-27T01:02:03.000000Z</date>
+    </commit>
+  </entry>
+</info>

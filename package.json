@@ -4,6 +4,7 @@
   "private": true,
   "description": "Production foundation for a read-only UE 5.6 codebase MCP indexer.",
   "license": "UNLICENSED",
+  "type": "module",
   "engines": {
     "node": "24.18.0",
     "npm": "11.16.0"
@@ -19,6 +20,9 @@
     "build": "node tools/build.mjs",
     "clean": "node tools/clean.mjs",
     "ci": "npm run format:check && npm run lint && npm test && npm run build && npm run license:check && npm run sbom",
+    "db:migrate": "powershell -NoProfile -File database/migrate.ps1 -Action up",
+    "db:rollback": "powershell -NoProfile -File database/migrate.ps1 -Action down",
+    "db:test:live": "powershell -NoProfile -File database/test-migrations.ps1",
     "format:check": "node tools/quality.mjs format",
     "lint": "node tools/quality.mjs lint",
     "license:check": "node tools/license-audit/check.mjs",
@@ -27,4 +31,3 @@
     "test": "node --test --test-reporter=spec"
   }
 }
-

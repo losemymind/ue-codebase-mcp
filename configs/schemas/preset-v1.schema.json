@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.ue-codebase-mcp.invalid/preset/v1",
+  "title": "UE Codebase MCP administrator preset configuration v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/reindex"
+    },
+    {
+      "$ref": "#/$defs/ubt"
+    },
+    {
+      "$ref": "#/$defs/uat"
+    }
+  ],
+  "$defs": {
+    "reindex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "version",
+        "id",
+        "project_id",
+        "kind",
+        "enabled",
+        "scopes",
+        "resource_policy"
+      ],
+      "properties": {
+        "schema": {
+          "const": "ue-codebase-mcp/preset"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "$ref": "common-v1.schema.json#/$defs/identifier"
+        },
+        "project_id": {
+          "$ref": "common-v1.schema.json#/$defs/identifier"
+        },
+        "kind": {
+          "const": "reindex"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "scopes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "engine",
+              "game",
+              "plugin"
+            ]
+          }
+        },
+        "resource_policy": {
+          "$ref": "common-v1.schema.json#/$defs/resourcePolicy"
+        }
+      }
+    },
+    "ubt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "version",
+        "id",
+        "project_id",
+        "kind",
+        "enabled",
+        "target",
+        "platform",
+        "configuration",
+        "clean",
+        "resource_policy"
+      ],
+      "properties": {
+        "schema": {
+          "const": "ue-codebase-mcp/preset"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "$ref": "common-v1.schema.json#/$defs/identifier"
+        },
+        "project_id": {
+          "$ref": "common-v1.schema.json#/$defs/identifier"
+        },
+        "kind": {
+          "const": "ubt_build"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}$"
+        },
+        "platform": {
+          "const": "Win64"
+        },
+        "configuration": {
+          "enum": [
+            "Debug",
+            "DebugGame",
+            "Development",
+            "Shipping",
+            "Test"
+          ]
+        },
+        "clean": {
+          "type": "boolean"
+        },
+        "resource_policy": {
+          "$ref": "common-v1.schema.json#/$defs/resourcePolicy"
+        }
+      }
+    },
+    "uat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "version",
+        "id",
+        "project_id",
+        "kind",
+        "enabled",
+        "test_plan",
+        "platform",
+        "configuration",
+        "resource_policy"
+      ],
+      "properties": {
+        "schema": {
+          "const": "ue-codebase-mcp/preset"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "$ref": "common-v1.schema.json#/$defs/identifier"
+        },
+        "project_id": {
+          "$ref": "common-v1.schema.json#/$defs/identifier"
+        },
+        "kind": {
+          "const": "uat_test"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "test_plan": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,62}$"
+        },
+        "platform": {
+          "const": "Win64"
+        },
+        "configuration": {
+          "enum": [
+            "DebugGame",
+            "Development",
+            "Shipping",
+            "Test"
+          ]
+        },
+        "resource_policy": {
+          "$ref": "common-v1.schema.json#/$defs/resourcePolicy"
+        }
+      }
+    }
+  }
+}
