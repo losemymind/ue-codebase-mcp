@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildUbtCompileDatabaseInvocation,
   createCoverageReport,
+  loadCompileDatabaseResponseFiles,
   normalizeCompileDatabase,
   parseWindowsCommandLine,
 } from '../../workers/clang-indexer/src/compile-database.ts';
@@ -53,6 +54,35 @@ test('workspace-confined response files expand without shell evaluation', () => 
   const [normalized] = normalizeCompileDatabase(JSON.stringify([entry]), [workspace], { response_files: responseFiles });
   assert.deepEqual(normalized.definitions, ['GAME_FROM_RSP=1']);
   assert.equal(normalized.include_paths[0], path.join(workspace, 'Project/Source'));
+});
+
+test('response file loader follows nested references with an injected reader', async () => {
+  const first = path.join(workspace, 'Project/Intermediate/first.rsp');
+  const nested = path.join(workspace, 'Project/Intermediate/nested.rsp');
+  const contents = new Map([
+    [first, `@Project/Intermediate/nested.rsp -I Project/Source "${gameSource}"`],
+    [nested, '-DGAME_FROM_NESTED_RSP=1'],
+  ]);
+  const database = JSON.stringify([{ directory: workspace, file: gameSource, arguments: [path.join(workspace, 'clang-cl.exe'), `@${first}`] }]);
+  const loaded = await loadCompileDatabaseResponseFiles(database, [workspace], async (absolutePath) => {
+    const content = contents.get(absolutePath);
+    if (content === undefined) throw new Error('missing fixture');
+    return content;
+  });
+  assert.equal(loaded.size, 2);
+  const [normalized] = normalizeCompileDatabase(database, [workspace], { response_files: loaded });
+  assert.deepEqual(normalized.definitions, ['GAME_FROM_NESTED_RSP=1']);
+});
+
+test('response file loader rejects escapes, missing data, invalid data, and excessive nesting', async () => {
+  const entry = (reference) => JSON.stringify([{ directory: workspace, file: gameSource, arguments: [path.join(workspace, 'clang-cl.exe'), reference] }]);
+  await assert.rejects(() => loadCompileDatabaseResponseFiles(entry('@../outside.rsp'), [workspace], async () => 'unused'), /escapes configured workspaces/);
+  await assert.rejects(() => loadCompileDatabaseResponseFiles(entry('@missing.rsp'), [workspace], async () => { throw new Error('missing'); }), /unavailable or invalid/);
+  await assert.rejects(() => loadCompileDatabaseResponseFiles(entry('@invalid.rsp'), [workspace], async () => 'bad\0data'), /bytes exceed|unavailable or invalid/);
+  await assert.rejects(() => loadCompileDatabaseResponseFiles(entry('@0.rsp'), [workspace], async (absolutePath) => {
+    const index = Number.parseInt(path.basename(absolutePath), 10);
+    return `@${index + 1}.rsp`;
+  }), /nesting is too deep/);
 });
 
 test('coverage report distinguishes raw coverage from explicit reviewed exemptions', () => {

@@ -58,8 +58,15 @@ export interface CompileDatabaseOptions {
   response_files?: ReadonlyMap<string, string>;
 }
 
+export type CompileResponseFileReader = (absolutePath: string) => Promise<string>;
+
 const SOURCE_EXTENSION = /\.(?:c|cc|cpp|cxx|m|mm)$/i;
 const TARGET = /^[A-Za-z][A-Za-z0-9_]{0,127}$/;
+const MAX_DATABASE_BYTES = 256 * 1024 * 1024;
+const MAX_DATABASE_ENTRIES = 1_000_000;
+const MAX_RESPONSE_FILE_BYTES = 16 * 1024 * 1024;
+const MAX_RESPONSE_FILES = 20_000;
+const MAX_RESPONSE_FILES_TOTAL_BYTES = 128 * 1024 * 1024;
 
 function confined(root: string, value: string, name: string): string {
   if (!path.isAbsolute(root) || !path.isAbsolute(value)) throw new TypeError(`${name} must be absolute`);
@@ -109,33 +116,103 @@ function normalizedPathArgument(base: string, value: string): string {
   return absoluteFrom(base, value.replace(/^"|"$/g, ''));
 }
 
+function parseCompileDatabaseJson(json: string): unknown[] {
+  if (typeof json !== 'string' || Buffer.byteLength(json, 'utf8') > MAX_DATABASE_BYTES) throw new TypeError('compile database exceeds 256 MiB');
+  let parsed: unknown;
+  try { parsed = JSON.parse(json); } catch { throw new TypeError('compile database JSON is invalid'); }
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > MAX_DATABASE_ENTRIES) throw new TypeError('compile database entries are invalid');
+  return parsed;
+}
+
+function responseFilePath(argument: string, directory: string, roots: readonly string[]): string {
+  const encodedPath = argument.slice(1).replace(/^"|"$/g, '');
+  if (!encodedPath || /[\r\n\0]/.test(encodedPath)) throw new TypeError('compile response file path is invalid');
+  const responsePath = absoluteFrom(directory, encodedPath);
+  if (!roots.some((root) => { const relative = path.relative(root, responsePath); return relative && !relative.startsWith('..') && !path.isAbsolute(relative); })) {
+    throw new TypeError('compile response file escapes configured workspaces');
+  }
+  return responsePath;
+}
+
+function parseResponseFile(content: string): string[] {
+  if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > MAX_RESPONSE_FILE_BYTES || content.includes('\0')) {
+    throw new TypeError('compile response file is unavailable or invalid');
+  }
+  return parseWindowsCommandLine(content.replaceAll('\r\n', ' ').replaceAll('\n', ' ').replaceAll('\r', ' '));
+}
+
 function expandResponseFiles(args: string[], directory: string, roots: readonly string[], files: ReadonlyMap<string, string> | undefined, depth = 0): string[] {
   if (depth > 4) throw new TypeError('compile response file nesting is too deep');
   const output: string[] = [];
   for (const argument of args) {
     if (!argument.startsWith('@')) { output.push(argument); continue; }
-    const responsePath = absoluteFrom(directory, argument.slice(1).replace(/^"|"$/g, ''));
-    if (!roots.some((root) => { const relative = path.relative(root, responsePath); return relative && !relative.startsWith('..') && !path.isAbsolute(relative); })) {
-      throw new TypeError('compile response file escapes configured workspaces');
-    }
+    const responsePath = responseFilePath(argument, directory, roots);
     const content = files?.get(responsePath);
-    if (content === undefined || Buffer.byteLength(content, 'utf8') > 16 * 1024 * 1024 || content.includes('\0')) {
-      throw new TypeError('compile response file is unavailable or invalid');
-    }
-    const parsed = parseWindowsCommandLine(content.replaceAll('\r\n', ' ').replaceAll('\n', ' ').replaceAll('\r', ' '));
+    if (content === undefined) throw new TypeError('compile response file is unavailable or invalid');
+    const parsed = parseResponseFile(content);
     output.push(...expandResponseFiles(parsed, directory, roots, files, depth + 1));
   }
   if (output.length > 16_384) throw new TypeError('expanded compile arguments exceed the limit');
   return output;
 }
 
+/**
+ * Loads only workspace-confined response files referenced by a compile database.
+ * The injected reader keeps filesystem access explicit and testable; no command is
+ * executed and response-file contents are never included in diagnostics.
+ */
+export async function loadCompileDatabaseResponseFiles(
+  json: string,
+  workspaceRoots: readonly string[],
+  reader: CompileResponseFileReader,
+): Promise<ReadonlyMap<string, string>> {
+  if (!Array.isArray(workspaceRoots) || workspaceRoots.length === 0) throw new TypeError('workspace roots are required');
+  if (typeof reader !== 'function') throw new TypeError('compile response file reader is required');
+  const roots = workspaceRoots.map((root) => path.resolve(root));
+  const parsed = parseCompileDatabaseJson(json);
+  const initial: Array<{ argument: string; directory: string; depth: number }> = [];
+  for (let entryIndex = 0; entryIndex < parsed.length; entryIndex += 1) {
+    const value = parsed[entryIndex];
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError(`compile entry ${entryIndex} is invalid`);
+    const raw = value as RawCompileCommand;
+    if (typeof raw.directory !== 'string' || !path.isAbsolute(raw.directory)) throw new TypeError(`compile entry ${entryIndex} path is invalid`);
+    if ((raw.arguments === undefined) === (raw.command === undefined)) throw new TypeError(`compile entry ${entryIndex} must contain exactly one argument representation`);
+    if (raw.arguments !== undefined && (!Array.isArray(raw.arguments) || raw.arguments.length === 0 || raw.arguments.length > 16_384 || raw.arguments.some((argument) => typeof argument !== 'string' || /[\r\n\0]/.test(argument)))) {
+      throw new TypeError(`compile entry ${entryIndex} arguments are invalid`);
+    }
+    const args = raw.arguments === undefined ? parseWindowsCommandLine(raw.command!) : raw.arguments;
+    for (const argument of args.slice(1)) if (argument.startsWith('@')) initial.push({ argument, directory: path.resolve(raw.directory), depth: 0 });
+  }
+
+  const files = new Map<string, string>();
+  const canonicalFiles = new Map<string, string>();
+  const pending = [...initial];
+  let totalBytes = 0;
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (current.depth > 4) throw new TypeError('compile response file nesting is too deep');
+    const responsePath = responseFilePath(current.argument, current.directory, roots);
+    const canonicalPath = responsePath.toLowerCase();
+    const cached = canonicalFiles.get(canonicalPath);
+    if (cached !== undefined) { files.set(responsePath, cached); continue; }
+    if (canonicalFiles.size >= MAX_RESPONSE_FILES) throw new TypeError('compile response file count exceeds the limit');
+    let content: string;
+    try { content = await reader(responsePath); } catch { throw new TypeError('compile response file is unavailable or invalid'); }
+    const bytes = typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : MAX_RESPONSE_FILE_BYTES + 1;
+    if (bytes > MAX_RESPONSE_FILE_BYTES || totalBytes + bytes > MAX_RESPONSE_FILES_TOTAL_BYTES) throw new TypeError('compile response file bytes exceed the limit');
+    const responseArgs = parseResponseFile(content);
+    totalBytes += bytes;
+    canonicalFiles.set(canonicalPath, content);
+    files.set(responsePath, content);
+    for (const argument of responseArgs) if (argument.startsWith('@')) pending.push({ argument, directory: current.directory, depth: current.depth + 1 });
+  }
+  return files;
+}
+
 export function normalizeCompileDatabase(json: string, workspaceRoots: readonly string[], options: CompileDatabaseOptions = {}): NormalizedCompileCommand[] {
-  if (Buffer.byteLength(json, 'utf8') > 256 * 1024 * 1024) throw new TypeError('compile database exceeds 256 MiB');
   if (!Array.isArray(workspaceRoots) || workspaceRoots.length === 0) throw new TypeError('workspace roots are required');
   const roots = workspaceRoots.map((root) => path.resolve(root));
-  let parsed: unknown;
-  try { parsed = JSON.parse(json); } catch { throw new TypeError('compile database JSON is invalid'); }
-  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 1_000_000) throw new TypeError('compile database entries are invalid');
+  const parsed = parseCompileDatabaseJson(json);
   const commands = parsed.map((value, entryIndex) => {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError(`compile entry ${entryIndex} is invalid`);
     const raw = value as RawCompileCommand;
@@ -145,6 +222,7 @@ export function normalizeCompileDatabase(json: string, workspaceRoots: readonly 
     const directory = path.resolve(raw.directory);
     const file = absoluteFrom(directory, raw.file);
     if (!roots.some((root) => { const relative = path.relative(root, file); return relative && !relative.startsWith('..') && !path.isAbsolute(relative); })) throw new TypeError(`compile entry ${entryIndex} file escapes configured workspaces`);
+    if (raw.arguments !== undefined && (!Array.isArray(raw.arguments) || raw.arguments.length === 0 || raw.arguments.length > 16_384 || raw.arguments.some((argument) => typeof argument !== 'string'))) throw new TypeError(`compile entry ${entryIndex} arguments are invalid`);
     const encodedArgs = raw.arguments === undefined ? parseWindowsCommandLine(raw.command!) : [...raw.arguments];
     const args = [encodedArgs[0], ...expandResponseFiles(encodedArgs.slice(1), directory, roots, options.response_files)];
     if (args.length === 0 || args.length > 16_384 || args.some((argument) => typeof argument !== 'string' || /[\r\n\0]/.test(argument))) throw new TypeError(`compile entry ${entryIndex} arguments are invalid`);

@@ -313,43 +313,46 @@ Next work: correlate descriptor/UBT module identities with indirect/helper rule 
 
 ## P1-08 — UE 5.6 compile database acquisition and validation
 
-Status: interface, normalization, synthetic validation, and real-environment preflight complete on 2026-08-28; real generation is blocked by the absent compatible x64 Clang installation, and the 99% TU gate has not run.
+Status: interface, synthetic validation, real HT generation and strict normalization complete on 2026-08-28; the emitted HT target action set reached 8,179/8,179 (100%), but full Engine+project acceptance is blocked because the Installed Build emits no Engine source compile actions.
 
 Deliverables:
 
 - Typed, workspace-confined UnrealBuildTool `GenerateClangDatabase` invocation for a fixed `UnrealBuildTool.exe`, project, target, Win64 configuration and output path.
 - Strict `compile_commands.json` reader supporting `arguments` and Windows command-line representations without invoking a shell.
 - Clang/clang-cl-only validation, workspace confinement, duplicate TU rejection, deterministic normalized hashes, output-flag removal, and include/forced-include/macro extraction.
-- Explicit, bounded response-file expansion supplied by a workspace-confined caller map; missing, escaping, nested-too-deep or oversized response files fail fast.
+- Explicit, bounded response-file discovery and expansion through an injected reader; workspace escape, missing/NUL/oversized content, count/total-byte limits, excessive nesting and expanded argument overflow fail fast without exposing file contents.
 - Reproducible TU coverage report separating raw coverage from named/reasoned/risk-documented exemptions and computing the fixed 99% gate without lowering it.
 - Fork-verified UBT arguments now include explicit `-OutputFilename=compile_commands.json` and `-NoExecCodeGenActions` so output naming is deterministic and the acquisition step does not run code-generation actions.
-- A sanitized real-environment report records the supplied local Engine/project inputs, SVN revision state, Fork version/toolchain requirements, controlled UBT attempt and exact continuation conditions.
+- Reproducible compile-database audit CLI reporting raw/normalized coverage, response-file bounds, source-root distribution, compiler drivers and extracted-argument coverage.
+- A sanitized real-environment report records the supplied inputs, revisions, generation evidence, path/macro samples, Installed Build limitation and exact continuation conditions.
 
 Verification commands and results:
 
 ```powershell
 node --test tests/unit/compile-database.test.mjs
+npm run compile-db:audit -- --database <absolute-compile_commands.json> --workspace-root <absolute-engine-root> --workspace-root <absolute-project-root>
 npm run ci
 npm run release:check
 ```
 
-- P1-08 synthetic suite: 6/6 passed for Windows quoting, normalization, macro/include/forced-include extraction, response files, escape/driver/duplicate rejection, coverage accounting and fixed UBT arguments.
-- The real UBT executable and `HTEditor Win64 Development` target were reached, then failed closed with `Clang x64 must be installed in order to build this target.` No output directory or compile database was created.
-- Fork source/config inspection established minimum Clang `18.1.3`, preferred Clang `18.x`/`19.1.x`, and the suggested Visual Studio component ID `Microsoft.VisualStudio.Component.VC.Llvm.Clang`.
-- Full repository CI passed 42/42 tests after the Fork-specific invocation update; build, boundary lint, permissive-license audit and zero-dependency CycloneDX SBOM generation passed. Release policy passed for `0.1.0`.
-- No real coverage percentage is claimed because the generator did not produce an artifact.
+- P1-08 suite: 8/8 passed, including nested injected response-file loading and escape/missing/NUL/depth rejection.
+- Full repository CI passed 49/49 tests; build, boundary lint, permissive-license audit and zero-dependency CycloneDX SBOM generation passed. Release policy passed for `0.1.0`.
+- VS2022 LLVM `clang-cl.exe` `19.1.5` was accepted by the Fork; UBT successfully generated a 4,457,407-byte database for `HTEditor Win64 Development`.
+- Real audit normalized `8,179/8,179` emitted target actions (`100%`) through 8,366 direct/nested response files totaling 30,550,038 bytes. All commands used `clang-cl.exe`; all yielded include paths, forced includes and definitions; no source escaped configured roots.
+- Three deterministic first-party samples checked 22 TU/include/forced-include paths and all 22 existed. The macro and generated forced-include sample matched the selected HTEditor Development module context.
+- Root distribution was Engine `0`, project `8,179`. Therefore no full Engine+project coverage percentage is claimed, and the G1 99% gate remains open.
 
 Known limitations and exact external inputs:
 
-- Received and validated: local Engine/project roots, matching SVN working-copy URLs, UE `5.6.1` Fork, real UBT executable, `HT.uproject`, and an available `HTEditor` target.
-- Blocking host input: an x64 Clang accepted by the Fork is not installed in any UBT-discovered location. Installing the Fork-suggested Visual Studio LLVM component is an explicit host mutation and was not performed implicitly.
+- Received and validated: local Engine/project roots, matching SVN working-copy URLs, UE `5.6.1` Fork, UBT, `HT.uproject`, `HTEditor`, and accepted VS2022 Clang `19.1.5`.
+- Full-scope blocker: `Engine\Build\InstalledBuild.txt` causes Engine modules to resolve as precompiled, so the Fork emits no Engine source actions. `-Include=Engine` cannot restore absent actions. The marker was not mutated and synthetic Engine flags were not fabricated.
 - Working-copy limitation: Engine reports `24636M`; project reports `85567MP`. Both contain local modifications and the project is partial/sparse, so they may support diagnostics but not clean pinned-revision G1 evidence.
 - Transport-policy limitation: the supplied SVN roots use plaintext HTTP, while the approved production configuration accepts only allowlisted HTTPS or `svn+ssh`. No insecure production exception was fabricated.
-- Still required: approved clean Engine/project revisions and target matrix/reviewer confirmation before final coverage acceptance.
-- Required: a full workspace scan defining the expected TU denominator and named reviewers for any exemption. Synthetic fixture approval names are test data only.
+- Still required: an approved clean source-build Engine revision (or reviewed indexing-only source checkout at the same revision), clean project revision, production target matrix and named reviewer for any exemption.
+- Production checkout also requires approved encrypted SVN endpoints/read-only trust and credential references, or an explicit reviewed HTTP policy exception.
 - Detailed evidence and the reproducible command are in `docs/progress/p1-08-real-environment-preflight.md`.
 
-Next work: after a compatible Clang is explicitly installed/provided, rerun the recorded generator command and coverage report. P1-09 production indexing remains blocked by this gate; unrelated Phase 1 work may continue.
+Next work: obtain a clean pinned source-build Engine workspace and rerun the same generator/audit for Engine+project. P1-09 remains dependency-blocked by the full P1-08 gate; unrelated Phase 1 work may continue.
 
 ## P1-03 — versioned configuration and secret-reference model
 
