@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "component": {
+    "type": "library",
+    "name": "libclang",
+    "version": "19.1.5",
+    "supplier": "LLVM Project",
+    "license_expression": "Apache-2.0 WITH LLVM-exception"
+  },
+  "runtime": {
+    "relative_path": "bin/libclang.dll",
+    "sha256": "097a23f872b1084953e1b0bde6ce36b2d565ebc3b3f1ec296bdcf61538ca581b",
+    "max_bytes": 134217728
+  },
+  "notices": {
+    "sha256": "782815bd1256f9ad798211eee4b0e574ddd113bd07700c6921ab25c591fbcda7",
+    "max_bytes": 16777216,
+    "required_markers": [
+      "%% clang NOTICES AND INFORMATION BEGIN HERE",
+      "Apache License, Version 2.0",
+      "LLVM Exceptions to the Apache 2.0 License"
+    ]
+  }
+}

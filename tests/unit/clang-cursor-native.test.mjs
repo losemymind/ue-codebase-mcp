@@ -9,6 +9,7 @@ test('native cursor build is fixed, warning-clean, and repository-confined', () 
   assert.match(buildScript, /Assert-Below \$repositoryRoot \$resolvedOutput/);
   assert.match(buildScript, /workers\\clang-indexer\\native\\cursor-indexer\.cpp/);
   assert.match(buildScript, /'\/W4' '\/WX'/);
+  assert.equal((buildScript.match(/'\/Brepro'/g) ?? []).length, 2);
   assert.match(buildScript, /SupportsShouldProcess/);
   assert.doesNotMatch(buildScript, /Invoke-Expression|Start-Process|cmd(?:\.exe)?\s+\/c/i);
 });

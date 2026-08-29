@@ -54,6 +54,6 @@ if ([System.IO.Path]::GetExtension($resolvedOutput) -ne '.exe') { throw 'OutputF
 
 if (-not $PSCmdlet.ShouldProcess($resolvedOutput, 'Build the fixed clang cursor indexer')) { return }
 New-Item -ItemType Directory -Path ([System.IO.Path]::GetDirectoryName($resolvedOutput)) -Force | Out-Null
-& $compiler '/nologo' '/std:c++20' '/EHsc' '/W4' '/WX' '/vctoolsdir' $resolvedVcTools '/winsdkdir' $resolvedWindowsSdk '/winsdkversion' $WindowsSdkVersion "/I$resolvedInclude" $source "/Fe:$resolvedOutput" '/link' "/LIBPATH:$([System.IO.Path]::GetDirectoryName($library))" 'libclang.lib'
+& $compiler '/nologo' '/std:c++20' '/EHsc' '/W4' '/WX' '/Brepro' '/vctoolsdir' $resolvedVcTools '/winsdkdir' $resolvedWindowsSdk '/winsdkversion' $WindowsSdkVersion "/I$resolvedInclude" $source "/Fe:$resolvedOutput" '/link' '/Brepro' "/LIBPATH:$([System.IO.Path]::GetDirectoryName($library))" 'libclang.lib'
 if ($LASTEXITCODE -ne 0) { throw "clang cursor indexer build failed with exit code $LASTEXITCODE" }
 Write-Output "built $resolvedOutput using $header"

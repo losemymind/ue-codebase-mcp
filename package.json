@@ -27,6 +27,7 @@
     "format:check": "node tools/quality.mjs format",
     "lint": "node tools/quality.mjs lint",
     "license:check": "node tools/license-audit/check.mjs",
+    "native:package": "node tools/package-clang-runtime.mjs",
     "release:check": "node tools/release/check.mjs",
     "sbom": "node tools/sbom/generate.mjs",
     "test": "node --test --test-reporter=spec"

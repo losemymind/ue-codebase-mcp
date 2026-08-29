@@ -4,7 +4,7 @@ import path from 'node:path';
 const root = process.cwd();
 const dist = path.join(root, 'dist');
 await mkdir(dist, { recursive: true });
-for (const file of ['VERSION', 'LICENSE_POLICY.md', 'SECURITY.md']) {
+for (const file of ['VERSION', 'LICENSE_POLICY.md', 'SECURITY.md', 'THIRD_PARTY_NOTICES.md']) {
   await cp(path.join(root, file), path.join(dist, file));
 }
 const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { cyclonedxComponent, loadNativeRuntimePolicy } from '../lib/native-runtime.mjs';
 
 const root = process.cwd();
 const lock = JSON.parse(await readFile(path.join(root, 'package-lock.json'), 'utf8'));
@@ -11,6 +12,8 @@ const components = Object.entries(lock.packages ?? {})
   version: pkg.version,
   licenses: pkg.license ? [{ license: { id: pkg.license } }] : [],
   }));
+const nativePolicy = await loadNativeRuntimePolicy(path.join(root, 'workers/clang-indexer/native/runtime-policy.json'));
+components.push(cyclonedxComponent(nativePolicy));
 const bom = {
   bomFormat: 'CycloneDX',
   specVersion: '1.5',

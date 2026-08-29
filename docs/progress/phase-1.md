@@ -480,3 +480,44 @@ Known limitations and next work:
 - Clean pinned revisions, encrypted SVN policy acceptance, the production target matrix, and named UE review of `dte80a.cpp` remain external governance blockers. Phase 2 remains frozen.
 
 Next work: implement and verify the compliant libclang runtime artifact workflow, then run a calibrated bounded Engine+HT sample when the runtime artifact and diagnostic working-copy safeguards are satisfied.
+
+## P1-09 increment — compliant and reproducible libclang runtime package
+
+Status: technical packaging implementation and live reproducibility evidence complete on 2026-08-29; formal license/release review, signed artifact provenance, calibrated corpus sampling, database persistence, and governance acceptance remain pending.
+
+Deliverables:
+
+- The fixed native build now passes `/Brepro` to both compilation and linking while preserving C++20, `/W4`, `/WX`, the reviewed source file, fixed toolchain roots, and repository-confined output.
+- A closed runtime policy pins LLVM Project `libclang` version `19.1.5`, license expression `Apache-2.0 WITH LLVM-exception`, the only accepted runtime relative path, the exact DLL SHA-256, the exact Visual Studio vendor-notice SHA-256, byte limits, and required Clang/Apache/LLVM-exception notice markers.
+- The dependency-free packager accepts only four named path inputs, never starts a process or shell, requires the cursor executable to remain under the repository, fixes all output names, refuses an existing output directory, and verifies every binary/notice input before creating output.
+- Each runtime directory contains the cursor executable, `libclang.dll`, the complete hash-pinned vendor `ThirdPartyNotices.txt`, a project notice summary, a package-specific CycloneDX 1.5 SBOM, and a deterministic runtime manifest.
+- The manifest records sorted file sizes/SHA-256 values, a deterministic `SOURCE_DATE_EPOCH`, and a package artifact hash suitable for P1-09 batch-plan binding. Runtime/notice drift, missing markers, symlinks, oversized inputs, path escape, output collision, malformed policy, and unsupported input shapes fail closed.
+- The root license gate and CycloneDX generator now include declared bundled-native components in addition to npm packages. `Apache-2.0 WITH LLVM-exception` is explicitly allowlisted, documented, and represented as an SBOM license expression; the runtime is no longer hidden behind the previous zero-npm-dependency result.
+- The normal build copies `THIRD_PARTY_NOTICES.md`; generated native binaries, runtime copies and packages remain under ignored `dist` paths and are not committed.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/clang-cursor-native.test.mjs tests/unit/native-runtime-package.test.mjs
+powershell -NoProfile -File tools/build-clang-cursor-indexer.ps1 <fixed toolchain inputs> -OutputFile <repro-a>
+powershell -NoProfile -File tools/build-clang-cursor-indexer.ps1 <fixed toolchain inputs> -OutputFile <repro-b>
+npm run native:package -- --runtime-root <VS LLVM x64> --notices-file <VS ThirdPartyNotices.txt> --executable <repro-a> --output-directory <package-a>
+npm run native:package -- --runtime-root <VS LLVM x64> --notices-file <VS ThirdPartyNotices.txt> --executable <repro-b> --output-directory <package-b>
+npm run ci
+npm run release:check
+```
+
+- Focused native/package suite: 5/5 passed. It covers fixed reproducible flags, package determinism, hash and notice enforcement, native SBOM/license metadata, path/output confinement, malformed policy, and absence of process/shell execution.
+- Two independent builds in different output directories produced identical cursor executable SHA-256 `5a80a720b6f0d4f139d4125e7220598ee2c647bb5707a9630cd7135e06932d3d`.
+- Both real packages produced artifact hash `92e081422a74811b4f57bbdd6c8397fa4c30aa1c96cf428df90aedf749e188a5` with pinned `libclang.dll` SHA-256 `097a23f872b1084953e1b0bde6ce36b2d565ebc3b3f1ec296bdcf61538ca581b` and vendor-notice SHA-256 `782815bd1256f9ad798211eee4b0e574ddd113bd07700c6921ab25c591fbcda7`.
+- Full repository CI: 76/76 passed; build, formatting, boundary lint, native-aware permissive-license audit, and CycloneDX generation with one declared native dependency passed.
+- Release policy passed for `0.1.0`.
+
+Known limitations and next work:
+
+- Hash pinning and notice/SBOM inclusion provide technical compliance controls, not formal legal approval. The packaged runtime and license treatment still require the named release/license reviewer before production distribution.
+- Authenticode signing, external provenance/attestation and final installer integration remain P1-18/P3-12 work; no signing identity or trust decision is fabricated here.
+- Visual Studio/LLVM upgrades intentionally fail the current policy. Updating a DLL or vendor notice requires an explicit version/hash/license/SBOM review plus repeated binary/package reproducibility evidence.
+- The live package used the accepted VS2022 Clang/libclang 19.1.5 environment and ignored `dist` artifacts only. It does not resolve the modified/partial working-copy, clean pinned-revision, HTTP SVN policy, target-matrix, or `dte80a.cpp` reviewer blockers.
+
+Next work: use the reproducible artifact hash in a calibrated, bounded Engine+HT sample run; record throughput, peak working set, diagnostics, retries, deduplication and checkpoint behavior without presenting the diagnostic working copies as clean G1 evidence. Phase 2 remains frozen.
