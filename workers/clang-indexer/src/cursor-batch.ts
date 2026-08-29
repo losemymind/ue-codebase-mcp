@@ -1,0 +1,496 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, open, readFile, readdir, realpath, rename } from 'node:fs/promises';
+import path from 'node:path';
+import type { NormalizedCompileCommand } from './compile-database.ts';
+import { CursorIndexerError, runCursorIndexer, type CursorExecutionPolicy } from './cursor-runner.ts';
+import {
+  buildCursorIndexerInvocation,
+  type CursorIndexerInvocation,
+  type CursorIndexResult,
+  type CursorLocation,
+  type CursorSymbol,
+} from './cursor-stream.ts';
+
+export type CursorBatchErrorCode =
+  | 'action-failed'
+  | 'invalid-checkpoint'
+  | 'invalid-plan'
+  | 'plan-mismatch'
+  | 'symbol-conflict';
+
+export class CursorBatchError extends Error {
+  readonly code: CursorBatchErrorCode;
+
+  constructor(code: CursorBatchErrorCode) {
+    super(`cursor batch ${code}`);
+    this.name = 'CursorBatchError';
+    this.code = code;
+  }
+}
+
+export interface CursorBatchRequest {
+  batch_id: string;
+  revision_set_hash: string;
+  tool_artifact_hash: string;
+  state_root: string;
+  checkpoint_directory: string;
+  executable: string;
+  tool_root: string;
+  workspace_roots: readonly string[];
+  commands: readonly NormalizedCompileCommand[];
+  batch_size?: number;
+  concurrency?: number;
+  max_attempts?: number;
+  execution_policy?: CursorExecutionPolicy;
+}
+
+export interface CursorBatchReport extends CursorIndexResult {
+  batch_id: string;
+  plan_hash: string;
+  total_actions: number;
+  completed_actions: number;
+  checkpoint_count: number;
+  attempt_count: number;
+  deduplicated_symbol_records: number;
+  deduplicated_locations: number;
+}
+
+export type CursorBatchActionExecutor = (
+  invocation: CursorIndexerInvocation,
+  workspaceRoots: readonly string[],
+  policy: CursorExecutionPolicy,
+) => Promise<CursorIndexResult>;
+
+interface CheckpointPayload {
+  schema_version: 1;
+  batch_id: string;
+  plan_hash: string;
+  batch_index: number;
+  start_index: number;
+  end_index: number;
+  action_hashes: string[];
+  attempt_count: number;
+  source_symbol_records: number;
+  source_location_records: number;
+  aggregate: CursorIndexResult;
+}
+
+interface CheckpointEnvelope {
+  schema_version: 1;
+  payload_sha256: string;
+  payload: CheckpointPayload;
+}
+
+const HASH = /^[a-f0-9]{64}$/;
+const BATCH_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const SOURCE_EXTENSION = /\.(?:c|cc|cpp|cxx|m|mm)$/i;
+const CHECKPOINT_FILE = /^checkpoint-(\d{6})\.json$/;
+const MAX_CHECKPOINT_FILES = 100_000;
+const MAX_CHECKPOINT_BYTES = 512 * 1024 * 1024;
+const MAX_BATCH_SIZE = 64;
+const MAX_CONCURRENCY = 8;
+const MAX_ATTEMPTS = 3;
+
+function exactKeys(value: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []): void {
+  const allowed = new Set([...required, ...optional]);
+  if (Object.keys(value).some((key) => !allowed.has(key)) || required.some((key) => !Object.hasOwn(value, key))) {
+    throw new CursorBatchError('invalid-checkpoint');
+  }
+}
+
+function object(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new CursorBatchError('invalid-checkpoint');
+  return value as Record<string, unknown>;
+}
+
+function safeInteger(value: unknown, maximum = Number.MAX_SAFE_INTEGER): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > maximum) throw new CursorBatchError('invalid-checkpoint');
+  return value as number;
+}
+
+function boundedString(value: unknown, allowEmpty = false): string {
+  if (typeof value !== 'string' || (!allowEmpty && value.length === 0) || value.length > 65_536 || /[\0]/.test(value)) {
+    throw new CursorBatchError('invalid-checkpoint');
+  }
+  return value;
+}
+
+function isBelow(root: string, value: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(value));
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function normalizedCommandHash(command: NormalizedCompileCommand): string {
+  return createHash('sha256').update(JSON.stringify({
+    directory: command.directory,
+    file: command.file,
+    compiler: command.compiler,
+    arguments: command.arguments,
+  })).digest('hex');
+}
+
+function validateCommand(command: NormalizedCompileCommand, roots: readonly string[]): void {
+  if (typeof command !== 'object' || command === null || !path.isAbsolute(command.directory)
+      || !path.isAbsolute(command.file) || !SOURCE_EXTENSION.test(command.file)
+      || !roots.some((root) => isBelow(root, command.file))
+      || !path.isAbsolute(command.compiler) || !/^(?:clang|clang-cl)(?:\.exe)?$/i.test(path.basename(command.compiler))
+      || !Array.isArray(command.arguments) || command.arguments.length > 16_384
+      || command.arguments.some((argument) => typeof argument !== 'string' || argument.length > 65_536 || /[\r\n\0]/.test(argument))
+      || !HASH.test(command.content_hash) || normalizedCommandHash(command) !== command.content_hash) {
+    throw new CursorBatchError('invalid-plan');
+  }
+}
+
+function planHash(request: CursorBatchRequest, batchSize: number): string {
+  return createHash('sha256').update(JSON.stringify({
+    schema_version: 1,
+    revision_set_hash: request.revision_set_hash,
+    tool_artifact_hash: request.tool_artifact_hash,
+    executable: path.resolve(request.executable),
+    batch_size: batchSize,
+    actions: request.commands.map(({ content_hash }) => content_hash),
+  })).digest('hex');
+}
+
+function locationKey(location: CursorLocation): string {
+  return JSON.stringify(location);
+}
+
+function compareLocations(left: CursorLocation, right: CursorLocation): number {
+  return left.file.localeCompare(right.file, 'en') || left.start_line - right.start_line
+    || left.start_column - right.start_column || left.end_line - right.end_line
+    || left.end_column - right.end_column || left.kind.localeCompare(right.kind, 'en');
+}
+
+function mergeSymbol(existing: CursorSymbol | undefined, incoming: CursorSymbol): CursorSymbol {
+  if (existing !== undefined && (existing.qualified_name !== incoming.qualified_name || existing.name !== incoming.name
+      || existing.display_name !== incoming.display_name || existing.kind !== incoming.kind
+      || existing.owner_usr !== incoming.owner_usr || existing.type_spelling !== incoming.type_spelling
+      || existing.result_type !== incoming.result_type || existing.signature_hash !== incoming.signature_hash)) {
+    throw new CursorBatchError('symbol-conflict');
+  }
+  const locations = new Map<string, CursorLocation>();
+  for (const location of [...(existing?.locations ?? []), ...incoming.locations]) locations.set(locationKey(location), location);
+  const documentation = [existing?.documentation, incoming.documentation]
+    .filter((value): value is string => value !== undefined)
+    .sort((left, right) => right.length - left.length || left.localeCompare(right, 'en'))[0];
+  return Object.freeze({
+    stable_usr: incoming.stable_usr,
+    qualified_name: incoming.qualified_name,
+    name: incoming.name,
+    display_name: incoming.display_name,
+    kind: incoming.kind,
+    ...(incoming.owner_usr === undefined ? {} : { owner_usr: incoming.owner_usr }),
+    type_spelling: incoming.type_spelling,
+    result_type: incoming.result_type,
+    ...(documentation === undefined ? {} : { documentation }),
+    signature_hash: incoming.signature_hash,
+    locations: Object.freeze([...locations.values()].sort(compareLocations)),
+  });
+}
+
+export function mergeCursorIndexResults(results: readonly CursorIndexResult[]): CursorIndexResult {
+  if (!Array.isArray(results) || results.length === 0) throw new CursorBatchError('invalid-plan');
+  const libclang = results[0].libclang;
+  const symbols = new Map<string, CursorSymbol>();
+  let diagnosticCount = 0;
+  let errorCount = 0;
+  let unidentifiedCount = 0;
+  for (const result of results) {
+    if (result.schema_version !== 1 || result.libclang !== libclang) throw new CursorBatchError('symbol-conflict');
+    diagnosticCount += result.diagnostic_count;
+    errorCount += result.error_count;
+    unidentifiedCount += result.unidentified_count;
+    if (![diagnosticCount, errorCount, unidentifiedCount].every(Number.isSafeInteger)) throw new CursorBatchError('symbol-conflict');
+    for (const symbol of result.symbols) symbols.set(symbol.stable_usr, mergeSymbol(symbols.get(symbol.stable_usr), symbol));
+  }
+  return Object.freeze({
+    schema_version: 1,
+    libclang,
+    diagnostic_count: diagnosticCount,
+    error_count: errorCount,
+    unidentified_count: unidentifiedCount,
+    symbols: Object.freeze([...symbols.values()].sort((left, right) => left.stable_usr.localeCompare(right.stable_usr, 'en'))),
+  });
+}
+
+function validatePersistedResult(value: unknown, roots: readonly string[]): CursorIndexResult {
+  const result = object(value);
+  exactKeys(result, ['schema_version', 'libclang', 'diagnostic_count', 'error_count', 'unidentified_count', 'symbols']);
+  if (result.schema_version !== 1 || !Array.isArray(result.symbols) || result.symbols.length > 2_000_000) throw new CursorBatchError('invalid-checkpoint');
+  const symbols = result.symbols.map((candidate) => {
+    const symbol = object(candidate);
+    exactKeys(symbol, ['stable_usr', 'qualified_name', 'name', 'display_name', 'kind', 'type_spelling', 'result_type', 'signature_hash', 'locations'], ['owner_usr', 'documentation']);
+    if (!Array.isArray(symbol.locations) || symbol.locations.length > 2_000_000) throw new CursorBatchError('invalid-checkpoint');
+    const locations = symbol.locations.map((entry) => {
+      const location = object(entry);
+      exactKeys(location, ['kind', 'file', 'start_line', 'start_column', 'end_line', 'end_column']);
+      const file = boundedString(location.file);
+      const startLine = safeInteger(location.start_line, 2_000_000);
+      const startColumn = safeInteger(location.start_column, 2_000_000);
+      const endLine = safeInteger(location.end_line, 2_000_000);
+      const endColumn = safeInteger(location.end_column, 2_000_000);
+      if (!['declaration', 'definition'].includes(location.kind as string) || !roots.some((root) => isBelow(root, file))
+          || startLine < 1 || startColumn < 1 || endLine < startLine || (endLine === startLine && endColumn < startColumn)) {
+        throw new CursorBatchError('invalid-checkpoint');
+      }
+      return Object.freeze({ kind: location.kind, file: path.resolve(file), start_line: startLine, start_column: startColumn, end_line: endLine, end_column: endColumn }) as CursorLocation;
+    });
+    const signatureHash = boundedString(symbol.signature_hash);
+    if (!HASH.test(signatureHash)) throw new CursorBatchError('invalid-checkpoint');
+    return Object.freeze({
+      stable_usr: boundedString(symbol.stable_usr), qualified_name: boundedString(symbol.qualified_name),
+      name: boundedString(symbol.name), display_name: boundedString(symbol.display_name), kind: boundedString(symbol.kind),
+      ...(symbol.owner_usr === undefined ? {} : { owner_usr: boundedString(symbol.owner_usr) }),
+      type_spelling: boundedString(symbol.type_spelling, true), result_type: boundedString(symbol.result_type, true),
+      ...(symbol.documentation === undefined ? {} : { documentation: boundedString(symbol.documentation) }),
+      signature_hash: signatureHash, locations: Object.freeze(locations),
+    }) as CursorSymbol;
+  });
+  return Object.freeze({
+    schema_version: 1,
+    libclang: boundedString(result.libclang),
+    diagnostic_count: safeInteger(result.diagnostic_count, 2_000_000_000),
+    error_count: safeInteger(result.error_count, 2_000_000_000),
+    unidentified_count: safeInteger(result.unidentified_count, 2_000_000_000),
+    symbols: Object.freeze(symbols),
+  });
+}
+
+function parseCheckpoint(text: string, roots: readonly string[]): CheckpointPayload {
+  if (Buffer.byteLength(text, 'utf8') > MAX_CHECKPOINT_BYTES) throw new CursorBatchError('invalid-checkpoint');
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { throw new CursorBatchError('invalid-checkpoint'); }
+  const envelope = object(parsed);
+  exactKeys(envelope, ['schema_version', 'payload_sha256', 'payload']);
+  const payloadHash = boundedString(envelope.payload_sha256);
+  if (envelope.schema_version !== 1 || !HASH.test(payloadHash)
+      || createHash('sha256').update(JSON.stringify(envelope.payload)).digest('hex') !== payloadHash) {
+    throw new CursorBatchError('invalid-checkpoint');
+  }
+  const payload = object(envelope.payload);
+  exactKeys(payload, [
+    'schema_version', 'batch_id', 'plan_hash', 'batch_index', 'start_index', 'end_index', 'action_hashes',
+    'attempt_count', 'source_symbol_records', 'source_location_records', 'aggregate',
+  ]);
+  if (payload.schema_version !== 1 || !BATCH_ID.test(boundedString(payload.batch_id)) || !HASH.test(boundedString(payload.plan_hash))
+      || !Array.isArray(payload.action_hashes) || payload.action_hashes.some((hash) => typeof hash !== 'string' || !HASH.test(hash))) {
+    throw new CursorBatchError('invalid-checkpoint');
+  }
+  return {
+    schema_version: 1,
+    batch_id: payload.batch_id as string,
+    plan_hash: payload.plan_hash as string,
+    batch_index: safeInteger(payload.batch_index, MAX_CHECKPOINT_FILES - 1),
+    start_index: safeInteger(payload.start_index, 1_000_000),
+    end_index: safeInteger(payload.end_index, 1_000_000),
+    action_hashes: [...payload.action_hashes] as string[],
+    attempt_count: safeInteger(payload.attempt_count, 1_000_000),
+    source_symbol_records: safeInteger(payload.source_symbol_records, 2_000_000_000),
+    source_location_records: safeInteger(payload.source_location_records, 2_000_000_000),
+    aggregate: validatePersistedResult(payload.aggregate, roots),
+  };
+}
+
+class ImmutableCheckpointStore {
+  readonly directory: string;
+  readonly roots: readonly string[];
+
+  private constructor(directory: string, roots: readonly string[]) {
+    this.directory = directory;
+    this.roots = roots;
+  }
+
+  static async create(stateRoot: string, checkpointDirectory: string, roots: readonly string[]): Promise<ImmutableCheckpointStore> {
+    if (!path.isAbsolute(stateRoot) || !path.isAbsolute(checkpointDirectory) || !isBelow(stateRoot, checkpointDirectory)) {
+      throw new CursorBatchError('invalid-plan');
+    }
+    const canonicalRoot = await realpath(stateRoot).catch(() => { throw new CursorBatchError('invalid-plan'); });
+    await mkdir(checkpointDirectory, { recursive: true });
+    const canonicalDirectory = await realpath(checkpointDirectory).catch(() => { throw new CursorBatchError('invalid-plan'); });
+    if (!isBelow(canonicalRoot, canonicalDirectory)) throw new CursorBatchError('invalid-plan');
+    return new ImmutableCheckpointStore(canonicalDirectory, roots);
+  }
+
+  async load(): Promise<CheckpointPayload[]> {
+    const entries = await readdir(this.directory, { withFileTypes: true });
+    const files = entries.filter((entry) => entry.isFile() && CHECKPOINT_FILE.test(entry.name)).sort((left, right) => left.name.localeCompare(right.name, 'en'));
+    if (entries.length > MAX_CHECKPOINT_FILES * 2 || files.length > MAX_CHECKPOINT_FILES
+        || entries.some((entry) => !entry.isFile() || (!CHECKPOINT_FILE.test(entry.name) && !entry.name.endsWith('.tmp')))) {
+      throw new CursorBatchError('invalid-checkpoint');
+    }
+    const checkpoints: CheckpointPayload[] = [];
+    for (let index = 0; index < files.length; index += 1) {
+      const match = CHECKPOINT_FILE.exec(files[index].name);
+      if (match === null || Number(match[1]) !== index) throw new CursorBatchError('invalid-checkpoint');
+      checkpoints.push(parseCheckpoint(await readFile(path.join(this.directory, files[index].name), 'utf8'), this.roots));
+    }
+    return checkpoints;
+  }
+
+  async append(payload: CheckpointPayload): Promise<void> {
+    const encodedPayload = JSON.stringify(payload);
+    const envelope: CheckpointEnvelope = {
+      schema_version: 1,
+      payload_sha256: createHash('sha256').update(encodedPayload).digest('hex'),
+      payload,
+    };
+    const encoded = `${JSON.stringify(envelope)}\n`;
+    if (Buffer.byteLength(encoded, 'utf8') > MAX_CHECKPOINT_BYTES) throw new CursorBatchError('invalid-checkpoint');
+    const target = path.join(this.directory, `checkpoint-${payload.batch_index.toString().padStart(6, '0')}.json`);
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    const handle = await open(temporary, 'wx');
+    try {
+      await handle.writeFile(encoded, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try { await rename(temporary, target); } catch { throw new CursorBatchError('invalid-checkpoint'); }
+  }
+}
+
+function workspaceFor(file: string, roots: readonly string[]): string {
+  const candidates = roots.filter((root) => isBelow(root, file)).sort((left, right) => right.length - left.length);
+  if (candidates.length === 0) throw new CursorBatchError('invalid-plan');
+  return candidates[0];
+}
+
+function compileArguments(command: NormalizedCompileCommand): string[] {
+  const source = path.resolve(command.file).toLowerCase();
+  return command.arguments.filter((argument) => !(path.isAbsolute(argument) && path.resolve(argument).toLowerCase() === source));
+}
+
+function retryable(error: unknown): boolean {
+  return error instanceof CursorIndexerError && ['start-failed', 'timeout', 'nonzero-exit'].includes(error.code);
+}
+
+async function executeBatch(
+  request: CursorBatchRequest,
+  roots: readonly string[],
+  start: number,
+  end: number,
+  concurrency: number,
+  maxAttempts: number,
+  executor: CursorBatchActionExecutor,
+): Promise<{ results: CursorIndexResult[]; attempts: number }> {
+  const results = new Array<CursorIndexResult>(end - start);
+  let attempts = 0;
+  let cursor = start;
+  let failure: unknown;
+  const workers = Array.from({ length: Math.min(concurrency, end - start) }, async () => {
+    while (failure === undefined) {
+      const actionIndex = cursor;
+      cursor += 1;
+      if (actionIndex >= end) return;
+      const command = request.commands[actionIndex];
+      const workspace = workspaceFor(command.file, roots);
+      const invocation = buildCursorIndexerInvocation({
+        executable: request.executable,
+        tool_root: request.tool_root,
+        workspace_root: workspace,
+        source_file: command.file,
+        compile_arguments: compileArguments(command),
+      });
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        attempts += 1;
+        try {
+          results[actionIndex - start] = await executor(invocation, roots, { ...request.execution_policy });
+          break;
+        } catch (error) {
+          if (attempt === maxAttempts || !retryable(error)) { failure = error; break; }
+        }
+      }
+    }
+  });
+  await Promise.all(workers);
+  if (failure !== undefined) {
+    if (failure instanceof CursorIndexerError && failure.code === 'aborted') throw failure;
+    throw new CursorBatchError('action-failed');
+  }
+  return { results, attempts };
+}
+
+export async function runCursorBatch(
+  request: CursorBatchRequest,
+  executor: CursorBatchActionExecutor = runCursorIndexer,
+): Promise<CursorBatchReport> {
+  const batchSize = request.batch_size ?? 16;
+  const concurrency = request.concurrency ?? 1;
+  const maxAttempts = request.max_attempts ?? 2;
+  if (!BATCH_ID.test(request.batch_id) || !HASH.test(request.revision_set_hash) || !HASH.test(request.tool_artifact_hash)
+      || !Array.isArray(request.workspace_roots) || request.workspace_roots.length === 0
+      || request.workspace_roots.some((root) => !path.isAbsolute(root)) || !Array.isArray(request.commands)
+      || request.commands.length === 0 || request.commands.length > 1_000_000
+      || !Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH_SIZE
+      || !Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY
+      || !Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > MAX_ATTEMPTS
+      || Math.ceil(request.commands.length / batchSize) > MAX_CHECKPOINT_FILES) {
+    throw new CursorBatchError('invalid-plan');
+  }
+  const roots = request.workspace_roots.map((root) => path.resolve(root));
+  for (const command of request.commands) validateCommand(command, roots);
+  const hash = planHash(request, batchSize);
+  const store = await ImmutableCheckpointStore.create(request.state_root, request.checkpoint_directory, roots);
+  const checkpoints = await store.load();
+  const aggregates: CursorIndexResult[] = [];
+  let completed = 0;
+  let attempts = 0;
+  let sourceSymbols = 0;
+  let sourceLocations = 0;
+  for (let index = 0; index < checkpoints.length; index += 1) {
+    const checkpoint = checkpoints[index];
+    const expectedEnd = Math.min(completed + batchSize, request.commands.length);
+    const expectedHashes = request.commands.slice(completed, expectedEnd).map(({ content_hash }) => content_hash);
+    if (checkpoint.batch_id !== request.batch_id || checkpoint.plan_hash !== hash || checkpoint.batch_index !== index
+        || checkpoint.start_index !== completed || checkpoint.end_index !== expectedEnd
+        || JSON.stringify(checkpoint.action_hashes) !== JSON.stringify(expectedHashes)) {
+      throw new CursorBatchError('plan-mismatch');
+    }
+    completed = expectedEnd;
+    attempts += checkpoint.attempt_count;
+    sourceSymbols += checkpoint.source_symbol_records;
+    sourceLocations += checkpoint.source_location_records;
+    aggregates.push(checkpoint.aggregate);
+  }
+  while (completed < request.commands.length) {
+    const start = completed;
+    const end = Math.min(start + batchSize, request.commands.length);
+    const execution = await executeBatch(request, roots, start, end, concurrency, maxAttempts, executor);
+    const aggregate = mergeCursorIndexResults(execution.results);
+    const batchSymbols = execution.results.reduce((total, result) => total + result.symbols.length, 0);
+    const batchLocations = execution.results.reduce((total, result) => total + result.symbols.reduce((count, symbol) => count + symbol.locations.length, 0), 0);
+    const payload: CheckpointPayload = {
+      schema_version: 1,
+      batch_id: request.batch_id,
+      plan_hash: hash,
+      batch_index: aggregates.length,
+      start_index: start,
+      end_index: end,
+      action_hashes: request.commands.slice(start, end).map(({ content_hash }) => content_hash),
+      attempt_count: execution.attempts,
+      source_symbol_records: batchSymbols,
+      source_location_records: batchLocations,
+      aggregate,
+    };
+    await store.append(payload);
+    aggregates.push(aggregate);
+    completed = end;
+    attempts += execution.attempts;
+    sourceSymbols += batchSymbols;
+    sourceLocations += batchLocations;
+  }
+  const aggregate = mergeCursorIndexResults(aggregates);
+  const uniqueLocations = aggregate.symbols.reduce((total, symbol) => total + symbol.locations.length, 0);
+  return Object.freeze({
+    ...aggregate,
+    batch_id: request.batch_id,
+    plan_hash: hash,
+    total_actions: request.commands.length,
+    completed_actions: completed,
+    checkpoint_count: aggregates.length,
+    attempt_count: attempts,
+    deduplicated_symbol_records: sourceSymbols - aggregate.symbols.length,
+    deduplicated_locations: sourceLocations - uniqueLocations,
+  });
+}

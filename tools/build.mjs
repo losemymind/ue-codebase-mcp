@@ -15,6 +15,7 @@ await import('../workers/windows-agent/src/index.ts');
 await import('../services/index-coordinator/src/workspace.ts');
 await import('../workers/clang-indexer/src/module-model.ts');
 await import('../workers/clang-indexer/src/compile-database.ts');
+await import('../workers/clang-indexer/src/cursor-batch.ts');
 const configExamples = ['project', 'repository', 'provider', 'preset'];
 for (const name of configExamples) {
   await loadConfigFile(path.join(root, 'configs', 'examples', `${name}-v1.yaml`));

@@ -1,10 +1,9 @@
 * text=auto eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
-*.ps1 text eol=crlf
+*.ps1 text eol=lf
 *.sln text eol=crlf
 *.vcxproj text eol=crlf
 *.png binary
 *.jpg binary
 *.zip binary
-

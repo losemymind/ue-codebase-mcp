@@ -443,3 +443,40 @@ Known limitations:
 - P1-02 architecture/security/data-owner sign-off is still pending, so global Definition of Done review requirements are not claimed complete.
 
 Next work: obtain P1-02/P1-03 security and architecture review; provide the approved secret-store contract, SVN URLs/read-only identities, and provider endpoint/model/data-processing approval when dependent Phase 1 integrations begin. Continue only dependency-safe Phase 1 work; Phase 2 remains frozen.
+
+## P1-09 increment — durable cursor batches, checkpoints, and cross-TU deduplication
+
+Status: implementation complete on 2026-08-29; compliant native-runtime packaging, calibrated real-corpus sampling, database persistence, and governance acceptance remain pending.
+
+Deliverables:
+
+- A bounded cursor batch orchestrator consumes only P1-08 `NormalizedCompileCommand` records whose deterministic content hashes are revalidated before execution. The compile-database compiler is never executed; every action is rebuilt as a typed invocation of the fixed `clang-cursor-indexer.exe` boundary.
+- Batch plans are bound to the immutable revision-set hash, native-tool artifact hash, executable identity, batch size, ordered normalized action hashes, and a deterministic SHA-256 plan hash. Resume fails closed when any of those inputs drift.
+- Successful bounded batches are written as immutable, fsynced, rename-published JSON checkpoint shards. Every shard carries a SHA-256 envelope, exact action range/hashes, attempt count, bounded aggregate and contiguous sequence number; missing, reordered, oversized, tampered, foreign, or unexpected checkpoint state is rejected.
+- Checkpoint roots must remain below an explicit existing state root and are canonicalized after creation. The design permits only fixed checkpoint filenames and bounded crash-temporary files; it exposes no general file-write or command interface.
+- Retry is capped at three attempts and limited to classified process start, timeout, and nonzero-exit failures. Invalid output, diagnostics-policy failures, output-limit failures, plan errors, and semantic conflicts are not retried. A shard is committed only after every action in that batch succeeds.
+- Concurrency is explicitly bounded to eight and batch size to 64. Plans are limited to one million actions and 100,000 checkpoint shards.
+- Cross-TU merge uses the raw Clang USR as identity, deterministically deduplicates locations and documentation, and retains aggregate diagnostics/unidentified counts. Contradictory qualified names, kinds, owners, signatures, types, result types, or libclang versions fail closed instead of silently merging.
+- The build manifest import now validates the new orchestration module. `.gitattributes` was corrected to match the existing repository-wide LF policy and format gate for PowerShell files, so a fresh Windows worktree no longer creates a self-contradictory CI state.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/cursor-batch.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused durable-batch suite: 4/4 passed. It covers restart without repeated successful work, transient-only retry, complete-batch checkpoint publication, plan drift, checkpoint tampering, cross-TU USR conflicts, fixed-executable enforcement, forbidden compiler arguments, and checkpoint-root confinement.
+- Full repository CI: 73/73 passed; formatting, security-boundary lint, build, permissive-license audit and zero-dependency CycloneDX SBOM generation passed.
+- The existing real synthetic SVN fixture initially failed under the offline sandbox identity with Windows `E720005`; the same dedicated test and full CI passed under the repository-owner execution context. No test threshold or assertion was changed.
+- Release policy passed for `0.1.0`.
+
+Known limitations and next work:
+
+- Checkpoints durably retain per-batch normalized cursor aggregates but are not the final PostgreSQL symbol/location persistence layer. P1-04 live database acceptance and the later generation staging contract are still required before database publication.
+- The native tool/runtime package hash must come from the compliant, reproducible artifact workflow; no hash is fabricated by orchestration. Runtime packaging must include Apache-2.0-with-LLVM-exception notices and explicit SBOM representation.
+- The real Engine/project working copies remain modified/partial diagnostic inputs. They may support a bounded throughput/memory sample but cannot be represented as clean pinned-revision G1 evidence.
+- Clean pinned revisions, encrypted SVN policy acceptance, the production target matrix, and named UE review of `dte80a.cpp` remain external governance blockers. Phase 2 remains frozen.
+
+Next work: implement and verify the compliant libclang runtime artifact workflow, then run a calibrated bounded Engine+HT sample when the runtime artifact and diagnostic working-copy safeguards are satisfied.
