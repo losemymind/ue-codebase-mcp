@@ -47,6 +47,16 @@ test('compile database rejects workspace escape, non-Clang compiler, response fi
   assert.throws(() => normalizeCompileDatabase(JSON.stringify([base, base]), [workspace]));
 });
 
+test('compile database preserves distinct flag variants for the same translation unit', () => {
+  const base = { directory: workspace, file: engineSource };
+  const normalized = normalizeCompileDatabase(JSON.stringify([
+    { ...base, arguments: [path.join(workspace, 'clang-cl.exe'), '/DVARIANT=runtime', engineSource] },
+    { ...base, arguments: [path.join(workspace, 'clang-cl.exe'), '/DVARIANT=test', engineSource] },
+  ]), [workspace]);
+  assert.equal(normalized.length, 2);
+  assert.notEqual(normalized[0].content_hash, normalized[1].content_hash);
+});
+
 test('workspace-confined response files expand without shell evaluation', () => {
   const responsePath = path.join(workspace, 'Project/Intermediate/compile.rsp');
   const entry = { directory: workspace, file: gameSource, arguments: [path.join(workspace, 'clang-cl.exe'), `@${responsePath}`] };

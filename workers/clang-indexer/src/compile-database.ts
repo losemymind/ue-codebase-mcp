@@ -65,8 +65,8 @@ const TARGET = /^[A-Za-z][A-Za-z0-9_]{0,127}$/;
 const MAX_DATABASE_BYTES = 256 * 1024 * 1024;
 const MAX_DATABASE_ENTRIES = 1_000_000;
 const MAX_RESPONSE_FILE_BYTES = 16 * 1024 * 1024;
-const MAX_RESPONSE_FILES = 20_000;
-const MAX_RESPONSE_FILES_TOTAL_BYTES = 128 * 1024 * 1024;
+const MAX_RESPONSE_FILES = 50_000;
+const MAX_RESPONSE_FILES_TOTAL_BYTES = 192 * 1024 * 1024;
 
 function confined(root: string, value: string, name: string): string {
   if (!path.isAbsolute(root) || !path.isAbsolute(value)) throw new TypeError(`${name} must be absolute`);
@@ -275,11 +275,13 @@ export function normalizeCompileDatabase(json: string, workspaceRoots: readonly 
       content_hash: createHash('sha256').update(JSON.stringify(stable)).digest('hex'),
     });
   });
-  const files = new Set<string>();
+  const variants = new Map<string, Set<string>>();
   for (const command of commands) {
     const key = command.file.toLowerCase();
-    if (files.has(key)) throw new TypeError(`compile database contains duplicate TU ${command.file}`);
-    files.add(key);
+    const hashes = variants.get(key) ?? new Set<string>();
+    if (hashes.has(command.content_hash)) throw new TypeError(`compile database contains duplicate TU variant ${command.file}`);
+    hashes.add(command.content_hash);
+    variants.set(key, hashes);
   }
   return commands;
 }

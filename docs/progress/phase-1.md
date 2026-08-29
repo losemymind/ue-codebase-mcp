@@ -313,46 +313,48 @@ Next work: correlate descriptor/UBT module identities with indirect/helper rule 
 
 ## P1-08 — UE 5.6 compile database acquisition and validation
 
-Status: interface, synthetic validation, real HT generation and strict normalization complete on 2026-08-28; the emitted HT target action set reached 8,179/8,179 (100%), but full Engine+project acceptance is blocked because the Installed Build emits no Engine source compile actions.
+Status: interface, guarded source-tree generation, strict normalization and real Engine+HT coverage audit complete on 2026-08-28; the technical TU gate passed at 29,254/29,255 (99.9966%), while clean pinned-revision evidence and review of one explicit exception remain pending.
 
 Deliverables:
 
 - Typed, workspace-confined UnrealBuildTool `GenerateClangDatabase` invocation for a fixed `UnrealBuildTool.exe`, project, target, Win64 configuration and output path.
 - Strict `compile_commands.json` reader supporting `arguments` and Windows command-line representations without invoking a shell.
-- Clang/clang-cl-only validation, workspace confinement, duplicate TU rejection, deterministic normalized hashes, output-flag removal, and include/forced-include/macro extraction.
+- Clang/clang-cl-only validation, workspace confinement, exact duplicate-variant rejection, distinct multi-configuration TU preservation, deterministic normalized hashes, output-flag removal, and include/forced-include/macro extraction.
 - Explicit, bounded response-file discovery and expansion through an injected reader; workspace escape, missing/NUL/oversized content, count/total-byte limits, excessive nesting and expanded argument overflow fail fast without exposing file contents.
 - Reproducible TU coverage report separating raw coverage from named/reasoned/risk-documented exemptions and computing the fixed 99% gate without lowering it.
-- Fork-verified UBT arguments now include explicit `-OutputFilename=compile_commands.json` and `-NoExecCodeGenActions` so output naming is deterministic and the acquisition step does not run code-generation actions.
+- Fork-verified UBT arguments include explicit `-OutputFilename=compile_commands.json` and `-NoExecCodeGenActions`; the Fork nevertheless runs UHT during source-target creation, which is recorded as an `Intermediate` side effect.
+- Guarded PowerShell acquisition script follows the project's source-Engine convention by temporarily moving `InstalledBuild.txt`, restoring it in `finally`, verifying its SHA-256, rejecting backup collisions and supporting `-WhatIf`.
 - Reproducible compile-database audit CLI reporting raw/normalized coverage, response-file bounds, source-root distribution, compiler drivers and extracted-argument coverage.
-- A sanitized real-environment report records the supplied inputs, revisions, generation evidence, path/macro samples, Installed Build limitation and exact continuation conditions.
+- A sanitized real-environment report records the supplied inputs, revisions, generation/restoration evidence, full coverage, the single non-Clang action and exact continuation conditions.
 
 Verification commands and results:
 
 ```powershell
 node --test tests/unit/compile-database.test.mjs
+powershell -NoProfile -File tools/generate-ue-compile-database.ps1 -EngineRoot <absolute-engine-root> -ProjectFile <absolute-uproject> -Target <editor-target> -Configuration Development -OutputFile <absolute-compile_commands.json> -TemporarilyDisableInstalledBuild
 npm run compile-db:audit -- --database <absolute-compile_commands.json> --workspace-root <absolute-engine-root> --workspace-root <absolute-project-root>
 npm run ci
 npm run release:check
 ```
 
-- P1-08 suite: 8/8 passed, including nested injected response-file loading and escape/missing/NUL/depth rejection.
-- Full repository CI passed 49/49 tests; build, boundary lint, permissive-license audit and zero-dependency CycloneDX SBOM generation passed. Release policy passed for `0.1.0`.
-- VS2022 LLVM `clang-cl.exe` `19.1.5` was accepted by the Fork; UBT successfully generated a 4,457,407-byte database for `HTEditor Win64 Development`.
-- Real audit normalized `8,179/8,179` emitted target actions (`100%`) through 8,366 direct/nested response files totaling 30,550,038 bytes. All commands used `clang-cl.exe`; all yielded include paths, forced includes and definitions; no source escaped configured roots.
-- Three deterministic first-party samples checked 22 TU/include/forced-include paths and all 22 existed. The macro and generated forced-include sample matched the selected HTEditor Development module context.
-- Root distribution was Engine `0`, project `8,179`. Therefore no full Engine+project coverage percentage is claimed, and the G1 99% gate remains open.
+- The project-owned `BuildEditor.bat` confirmed that `InstalledBuild.txt` is an intentional source-tree build switch. The guarded generation removed only that semantic switch, restored its original SHA-256 in `finally`, and UBT completed in 57.02 seconds.
+- Full repository CI passed 52/52 tests; build, boundary lint, permissive-license audit, zero-dependency CycloneDX SBOM and release policy all passed.
+- Real audit normalized 29,344 Clang actions representing 29,254 of 29,255 unique TUs (`99.99658178089216%`). The fixed technical `>=99%` gate passed.
+- Action distribution: Engine 21,155; project 8,189; outside roots 0. All normalized actions yielded include paths, forced includes, definitions and unique hashes.
+- The audit loaded 30,546 response files totaling 130,100,892 bytes within calibrated hard limits and preserved 90 distinct multi-variant TUs.
+- One generated `VisualStudioDTE/dte80a.cpp` action uses `cmd.exe` to invoke MSVC for type-library output. It is explicitly excluded from Clang normalization with a documented symbol-omission risk and requires named reviewer approval.
 
 Known limitations and exact external inputs:
 
 - Received and validated: local Engine/project roots, matching SVN working-copy URLs, UE `5.6.1` Fork, UBT, `HT.uproject`, `HTEditor`, and accepted VS2022 Clang `19.1.5`.
-- Full-scope blocker: `Engine\Build\InstalledBuild.txt` causes Engine modules to resolve as precompiled, so the Fork emits no Engine source actions. `-Include=Engine` cannot restore absent actions. The marker was not mutated and synthetic Engine flags were not fabricated.
+- Source-tree convention resolved: `InstalledBuild.txt` intentionally suppresses Engine rebuilds for ordinary developers and can be safely toggled with the guarded, hash-verified workflow. It is no longer a technical blocker.
 - Working-copy limitation: Engine reports `24636M`; project reports `85567MP`. Both contain local modifications and the project is partial/sparse, so they may support diagnostics but not clean pinned-revision G1 evidence.
 - Transport-policy limitation: the supplied SVN roots use plaintext HTTP, while the approved production configuration accepts only allowlisted HTTPS or `svn+ssh`. No insecure production exception was fabricated.
-- Still required: an approved clean source-build Engine revision (or reviewed indexing-only source checkout at the same revision), clean project revision, production target matrix and named reviewer for any exemption.
+- Still required: approved clean Engine/project revisions, production target matrix and a named UE reviewer decision for the sole `dte80a.cpp` exception.
 - Production checkout also requires approved encrypted SVN endpoints/read-only trust and credential references, or an explicit reviewed HTTP policy exception.
 - Detailed evidence and the reproducible command are in `docs/progress/p1-08-real-environment-preflight.md`.
 
-Next work: obtain a clean pinned source-build Engine workspace and rerun the same generator/audit for Engine+project. P1-09 remains dependency-blocked by the full P1-08 gate; unrelated Phase 1 work may continue.
+Next work: reproduce the guarded generation in a clean P1-07 pinned workspace and obtain the exception/target-matrix reviews. P1-09 production indexing remains governance-blocked until those P1-08 inputs are accepted; unrelated Phase 1 work may continue.
 
 ## P1-03 — versioned configuration and secret-reference model
 
