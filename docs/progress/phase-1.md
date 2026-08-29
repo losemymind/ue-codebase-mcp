@@ -356,6 +356,42 @@ Known limitations and exact external inputs:
 
 Next work: reproduce the guarded generation in a clean P1-07 pinned workspace and obtain the exception/target-matrix reviews. P1-09 production indexing remains governance-blocked until those P1-08 inputs are accepted; unrelated Phase 1 work may continue.
 
+## P1-09 — Clang symbols, locations, documentation, and UHT metadata
+
+Status: dependency threshold satisfied and implementation started on 2026-08-29; bounded clang-doc symbol normalization and source-level UHT metadata extraction are complete, while precise columns/end ranges, field USRs, real-corpus execution and gold acceptance remain in progress.
+
+Deliverables in this increment:
+
+- Real VS2022 `clang-doc 19.1.5` LibTooling probe over a C++20 gold fixture, proving the available tool emits stable Clang-USR-derived IDs, class/template/function structure, overload separation, documentation and declaration/definition lines.
+- Bounded dependency-free clang-doc YAML parser rejecting aliases, tags, tabs, duplicate fields, malformed IDs, excessive depth/size/line counts and unsupported scalar forms.
+- Normalized symbol model for namespaces, classes/structs/unions, functions/methods/constructors/destructors, ownership, signatures, deterministic signature hashes, template parameters, documentation, location hints and field-member hints.
+- Stable IDs are explicitly encoded as `clang-doc-sha1:<id>` because clang-doc exposes its SHA-1 `SymbolID` derived from the Clang USR, not the raw USR string. No application-generated name hash is represented as a Clang USR.
+- Non-executing UHT scanner for `UCLASS`, `UFUNCTION` and `UPROPERTY`, including balanced nested arguments, specifiers, `meta`, Blueprint exposure, declaration names and source lines; comments, strings and preprocessor macro definitions do not create false annotations.
+- Declaration-line attachment disambiguates overloaded UFUNCTIONs and reports unmatched/ambiguous annotations instead of silently assigning metadata.
+- Gold fixtures cover a documented template, a UCLASS, two documented overloaded UFUNCTIONs and a UPROPERTY.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/symbol-model.test.mjs tests/unit/uht-metadata.test.mjs
+npm run ci
+npm run release:check
+```
+
+- P1-09 focused tests: 6/6 passed.
+- Full repository CI: 58/58 passed; build, boundary lint, permissive-license audit, zero-dependency CycloneDX SBOM and release policy passed.
+- The live clang-doc probe mapped four documentation records and emitted distinct IDs for the two `Gold::UGoldActor::Overload` signatures.
+
+Known limitations:
+
+- clang-doc supplies line numbers but not columns/end ranges; these hints cannot yet be inserted into the non-null `symbol_locations` schema.
+- clang-doc member hints omit field USRs and locations. The gold UPROPERTY remains explicitly unmatched until the cursor layer supplies the field symbol.
+- clang-doc exposes a SHA-1 SymbolID, not the raw Clang cursor USR. A libclang cursor layer is required before final USR acceptance.
+- The UHT scanner covers the reviewed macro grammar but has not yet been audited over the full private Engine+HT corpus.
+- No full-corpus symbol index or P1-09 completion claim is made in this increment.
+
+Next work: build the typed libclang cursor extraction layer for raw USRs, exact start/end line and column, fields and preprocessing cursors; merge it with clang-doc documentation and UHT annotations, then run the class/function/template/overload gold set and bounded real-corpus benchmark. Phase 2 remains frozen.
+
 ## P1-03 — versioned configuration and secret-reference model
 
 Status: implementation complete on 2026-08-27; required architecture/security review and production secret-store/provider/SVN inputs remain pending.

@@ -1,0 +1,83 @@
+---
+USR:             '935F42DA7D49F5E486A5AD133D593BEF004B535A'
+Name:            'UGoldActor'
+Path:            'Gold'
+Namespace:
+  - Type:            Namespace
+    Name:            'Gold'
+    QualName:        'Gold'
+    USR:             '4596921C88D6BAD67CEBB8EE8E91C7A454A614C4'
+DefLocation:
+  LineNumber:      18
+  Filename:        'packages\test-fixtures\cpp-symbols\SymbolGold.h'
+TagType:         Class
+Members:
+  - Type:
+      Name:            'int'
+      QualName:        'int'
+    Name:            'Count'
+    Access:          Public
+ChildFunctions:
+  - USR:             '435CF83AC23D04BA55DB89840FE6156C6F955825'
+    Name:            'Overload'
+    Description:
+      - Kind:            'FullComment'
+        Children:
+          - Kind:            'ParagraphComment'
+            Children:
+              - Kind:            'TextComment'
+                Text:            ' Returns the integer value unchanged.'
+    DefLocation:
+      LineNumber:      3
+      Filename:        'packages\test-fixtures\cpp-symbols\SymbolGold.cpp'
+    Location:
+      - LineNumber:      24
+        Filename:        'packages\test-fixtures\cpp-symbols\SymbolGold.h'
+    IsMethod:        true
+    Parent:
+      Type:            Record
+      Name:            'UGoldActor'
+      QualName:        'Gold::UGoldActor'
+      USR:             '935F42DA7D49F5E486A5AD133D593BEF004B535A'
+    Params:
+      - Type:
+          Name:            'int'
+          QualName:        'int'
+        Name:            'Value'
+    ReturnType:
+      Type:
+        Name:            'int'
+        QualName:        'int'
+    Access:          Public
+  - USR:             '08D230C817307628B4FEC5EFA28360371D4D65EA'
+    Name:            'Overload'
+    Description:
+      - Kind:            'FullComment'
+        Children:
+          - Kind:            'ParagraphComment'
+            Children:
+              - Kind:            'TextComment'
+                Text:            ' Returns the floating-point value unchanged.'
+    DefLocation:
+      LineNumber:      7
+      Filename:        'packages\test-fixtures\cpp-symbols\SymbolGold.cpp'
+    Location:
+      - LineNumber:      28
+        Filename:        'packages\test-fixtures\cpp-symbols\SymbolGold.h'
+    IsMethod:        true
+    Parent:
+      Type:            Record
+      Name:            'UGoldActor'
+      QualName:        'Gold::UGoldActor'
+      USR:             '935F42DA7D49F5E486A5AD133D593BEF004B535A'
+    Params:
+      - Type:
+          Name:            'double'
+          QualName:        'double'
+        Name:            'Value'
+    ReturnType:
+      Type:
+        Name:            'double'
+        QualName:        'double'
+    Access:          Public
+...

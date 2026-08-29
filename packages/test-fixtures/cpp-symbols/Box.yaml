@@ -1,0 +1,30 @@
+---
+USR:             'E1554323F8D7539C03099E6DA924B8463225B9AE'
+Name:            'Box'
+Path:            'Gold'
+Namespace:
+  - Type:            Namespace
+    Name:            'Gold'
+    QualName:        'Gold'
+    USR:             '4596921C88D6BAD67CEBB8EE8E91C7A454A614C4'
+Description:
+  - Kind:            'FullComment'
+    Children:
+      - Kind:            'ParagraphComment'
+        Children:
+          - Kind:            'TextComment'
+            Text:            ' A documented template used to verify stable symbol identities.'
+DefLocation:
+  LineNumber:      12
+  Filename:        'packages\test-fixtures\cpp-symbols\SymbolGold.h'
+TagType:         Class
+Members:
+  - Type:
+      Name:            'T'
+      QualName:        'T'
+    Name:            'Value'
+    Access:          Public
+Template:
+  Params:
+    - Contents:        'typename T'
+...
