@@ -358,7 +358,7 @@ Next work: reproduce the guarded generation in a clean P1-07 pinned workspace an
 
 ## P1-09 — Clang symbols, locations, documentation, and UHT metadata
 
-Status: dependency threshold satisfied and implementation started on 2026-08-29; bounded clang-doc symbol normalization and source-level UHT metadata extraction are complete, while precise columns/end ranges, field USRs, real-corpus execution and gold acceptance remain in progress.
+Status: dependency threshold satisfied and implementation in progress on 2026-08-29; bounded clang-doc normalization, raw libclang cursor extraction, exact source ranges, UHT metadata extraction and their fail-closed merge are implemented, while production process orchestration, real-corpus execution and reviewer acceptance remain in progress.
 
 Deliverables in this increment:
 
@@ -369,28 +369,38 @@ Deliverables in this increment:
 - Non-executing UHT scanner for `UCLASS`, `UFUNCTION` and `UPROPERTY`, including balanced nested arguments, specifiers, `meta`, Blueprint exposure, declaration names and source lines; comments, strings and preprocessor macro definitions do not create false annotations.
 - Declaration-line attachment disambiguates overloaded UFUNCTIONs and reports unmatched/ambiguous annotations instead of silently assigning metadata.
 - Gold fixtures cover a documented template, a UCLASS, two documented overloaded UFUNCTIONs and a UPROPERTY.
+- A fixed C++20 `libclang` cursor executable emits bounded JSONL for raw Clang USRs, semantic owners, definitions/declarations, exact start/end line and column, fields, macros, types, result types and raw comments. Emission is confined to the configured workspace.
+- A typed invocation and strict JSONL reader reject path escapes, unknown fields, conflicting USR records, plugins, executable Clang extensions, output/module-cache options, oversized output and malformed ranges. Anonymous or otherwise unusable identities are validated and counted rather than silently becoming symbols or failing a complete TU.
+- The native build script fixes the reviewed source file, output confinement, VS2022 toolset, Windows SDK, clang-c headers/import library and `/W4 /WX`; it provides `-WhatIf` and exposes no arbitrary compiler/source/argument field.
+- Raw cursor USRs are correlated to clang-doc using `SHA-1(raw USR)`, exactly matching clang-doc's published SymbolID derivation, but the persisted stable identity remains the raw USR. A mismatch in qualified name or kind fails closed.
+- The merge layer combines raw identities and exact cursor ranges with clang-doc documentation/template parameters and declaration-line UHT metadata. Unmatched clang-doc IDs and unmatched/ambiguous UHT annotations remain explicit report fields.
+- A bounded no-shell process runner revalidates the complete typed invocation, uses a minimal environment, enforces timeout and combined stdout/stderr limits, supports cancellation, never returns raw stderr in classified failures and rejects Clang error diagnostics by default.
 
 Verification commands and results:
 
 ```powershell
-node --test tests/unit/symbol-model.test.mjs tests/unit/uht-metadata.test.mjs
+node --test tests/unit/symbol-model.test.mjs tests/unit/uht-metadata.test.mjs tests/unit/cursor-stream.test.mjs tests/unit/cursor-runner.test.mjs tests/unit/clang-cursor-native.test.mjs tests/unit/symbol-merge.test.mjs
+powershell -NoProfile -File tools/build-clang-cursor-indexer.ps1 -LlvmRoot <VS2022-LLVM-root> -ClangCIncludeRoot <clang-c-include-root> -VcToolsRoot <VS2022-toolset-root> -WindowsSdkRoot <Windows-SDK-root> -WindowsSdkVersion <version>
 npm run ci
 npm run release:check
 ```
 
-- P1-09 focused tests: 6/6 passed.
-- Full repository CI: 58/58 passed; build, boundary lint, permissive-license audit, zero-dependency CycloneDX SBOM and release policy passed.
+- P1-09 focused tests: 17/17 passed.
+- Full repository CI: 69/69 passed; build, boundary lint, permissive-license audit, zero-dependency CycloneDX SBOM and release policy passed.
 - The live clang-doc probe mapped four documentation records and emitted distinct IDs for the two `Gold::UGoldActor::Overload` signatures.
+- The native tool built successfully with VS2022 Clang `19.1.5`, MSVC toolset `14.38.33130`, Windows SDK `10.0.22621.0` and the Engine-provided clang-c API header. The rebuild used `/W4 /WX` and produced no diagnostic.
+- The live native gold probe exited `0` with zero parse errors and emitted 18 records, 15 distinct raw USRs, two field records, four macro records and two distinct overload USRs. `Gold::UGoldActor` remained the qualified name rather than acquiring a translation-unit path.
+- The merged gold set passed for the class, template, overload separation, declaration/definition association, field raw USR, documentation and all four UHT annotations including the previously unresolved UPROPERTY.
 
 Known limitations:
 
-- clang-doc supplies line numbers but not columns/end ranges; these hints cannot yet be inserted into the non-null `symbol_locations` schema.
-- clang-doc member hints omit field USRs and locations. The gold UPROPERTY remains explicitly unmatched until the cursor layer supplies the field symbol.
-- clang-doc exposes a SHA-1 SymbolID, not the raw Clang cursor USR. A libclang cursor layer is required before final USR acceptance.
+- The native executable and the Engine/VS libclang runtime are not yet packaged. Bundling `libclang.dll` requires explicit Apache-2.0-with-LLVM-exception notices, SBOM representation and reproducible artifact checks; the generated local `dist` binary is not committed.
+- The bounded runner is implemented, but it is not yet joined to durable batch/checkpoint orchestration over the normalized P1-08 compile commands. The live probe is engineering evidence, not a claim that the full 29,254-TU corpus has been indexed.
+- Cross-TU deduplication, retry/checkpoint behavior, database persistence and a bounded real Engine+HT throughput/memory benchmark remain required.
 - The UHT scanner covers the reviewed macro grammar but has not yet been audited over the full private Engine+HT corpus.
-- No full-corpus symbol index or P1-09 completion claim is made in this increment.
+- Clean pinned-revision evidence and the named UE review of the P1-08 `dte80a.cpp` exception remain governance prerequisites for production acceptance. No P1-09 completion claim is made in this increment.
 
-Next work: build the typed libclang cursor extraction layer for raw USRs, exact start/end line and column, fields and preprocessing cursors; merge it with clang-doc documentation and UHT annotations, then run the class/function/template/overload gold set and bounded real-corpus benchmark. Phase 2 remains frozen.
+Next work: add durable batch/checkpoint orchestration over normalized compile commands, settle compliant libclang runtime packaging, then run a calibrated Engine+HT corpus sample before database persistence and named gold review. Phase 2 remains frozen.
 
 ## P1-03 — versioned configuration and secret-reference model
 
