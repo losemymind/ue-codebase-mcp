@@ -99,6 +99,34 @@ test('cursor JSONL validates but counts cursors that lack a usable identity', ()
   assert.throws(() => parseCursorIndexerJsonLines([manifest, symbol({ usr: null, file: path.resolve('outside.cpp') })].map((value) => JSON.stringify(value)).join('\n'), [workspace]));
 });
 
+test('cursor protocol v2 strictly parses bounded symbol and include relations', () => {
+  const manifest = { type: 'manifest', schema_version: 2, libclang: 'clang version 19.1.5', diagnostic_count: 0, error_count: 0 };
+  const sourceUsr = 'c:@N@Gold@S@UGoldActor@F@Overload#I#1';
+  const targetUsr = 'c:@N@Gold@F@Helper#I#';
+  const result = parseCursorIndexerJsonLines([
+    manifest,
+    symbol({ usr: sourceUsr }),
+    { type: 'symbol_edge', edge_type: 'calls', src_usr: sourceUsr, dst_usr: targetUsr, file: source, line: 4, column: 10, confidence: 1 },
+    { type: 'file_edge', edge_type: 'include', src_file: source, dst_file: header, line: 1, column: 1 },
+  ].map((value) => JSON.stringify(value)).join('\n'), [workspace]);
+  assert.deepEqual(result.relation_shard, {
+    schema_version: 1,
+    symbol_edges: [{ edge_type: 'calls', src_usr: sourceUsr, dst_usr: targetUsr, file: source, line: 4, column: 10, confidence: 1 }],
+    file_edges: [{ edge_type: 'include', src_file: source, dst_file: header, line: 1, column: 1 }],
+  });
+});
+
+test('cursor protocols reject relation version mixing, unknown edges, extensions, and escaped evidence', () => {
+  const v1 = { type: 'manifest', schema_version: 1, libclang: 'clang version 19.1.5', diagnostic_count: 0, error_count: 0 };
+  const v2 = { ...v1, schema_version: 2 };
+  const edge = { type: 'symbol_edge', edge_type: 'calls', src_usr: 'c:@F@Source#', dst_usr: 'c:@F@Target#', file: source, line: 1, column: 1, confidence: 1 };
+  assert.throws(() => parseCursorIndexerJsonLines([v1, edge].map(JSON.stringify).join('\n'), [workspace]), /version 2/);
+  assert.throws(() => parseCursorIndexerJsonLines([v2, { ...edge, edge_type: 'owns' }].map(JSON.stringify).join('\n'), [workspace]), /unsupported/);
+  assert.throws(() => parseCursorIndexerJsonLines([v2, { ...edge, extension: true }].map(JSON.stringify).join('\n'), [workspace]), /fields/);
+  assert.throws(() => parseCursorIndexerJsonLines([v2, { ...edge, file: path.resolve('outside.cpp') }].map(JSON.stringify).join('\n'), [workspace]), /evidence/);
+  assert.throws(() => parseCursorIndexerJsonLines([v2, { type: 'unknown' }].map(JSON.stringify).join('\n'), [workspace]), /fields/);
+});
+
 test('cursor invocation is typed, confined, and rejects plugin/output arguments', () => {
   const toolRoot = path.resolve('dist/native');
   const executable = path.join(toolRoot, 'clang-cursor-indexer.exe');

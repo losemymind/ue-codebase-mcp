@@ -679,3 +679,40 @@ Known limitations and next work:
 - All P1-09 external blockers and global G1 governance blockers remain unchanged. P1-10 work does not authorize Phase 2.
 
 Next work: version the native cursor stream for bounded relation records, add strict parser/checkpoint support and calibrate a committed relation gold for calls/references/inherits/overrides/includes/owns before adding transactional persistence. Phase 2 remains frozen.
+
+## P1-10 increment — versioned relation protocol and durable checkpoint aggregation
+
+Status: the TypeScript protocol/parser and cross-TU checkpoint integration are complete on 2026-08-31; the native C++ emitter, committed relation gold, transactional persistence, live calibration, and named-reviewer acceptance remain pending.
+
+Deliverables:
+
+- Cursor JSONL protocol version 2 adds closed `symbol_edge` records for `calls`, `references`, `inherits`, and `overrides`, plus closed `file_edge` records for `include`. Protocol version 1 remains symbol-only; relation records mixed into v1 are rejected.
+- Native records cannot emit `owns`. Unknown edge kinds, unknown fields, partial or escaped evidence, invalid confidence/coordinates, self inheritance/override, self includes, malformed USRs, and unsupported record types fail closed.
+- Parsed relation records are normalized into the existing version-1 `RelationShard` contract while the enclosing cursor aggregate remains backward compatible with symbol-only P1-09 checkpoints.
+- Relation-shard merging is reusable independently of endpoint resolution. It validates workspace confinement, deterministically sorts and deduplicates semantic/include evidence, and retains the highest confidence for duplicate semantic evidence.
+- Cursor batch checkpoints optionally persist a validated relation shard and paired source record counts. Legacy symbol-only checkpoints remain readable; partial relation metadata, mixed relation modes, non-canonical/tampered shards, and incompatible state fail closed.
+- Batch reports now expose source and deduplicated counts for both symbol and file edges. Resume preserves the exact report and does not repeat completed native actions.
+- Existing P1-10 endpoint resolution and derived ownership behavior remain unchanged: unresolved private USRs are counted without disclosure, and `owns` is derived only after accepted symbol resolution.
+
+Verification commands and results:
+
+```powershell
+node --test --test-reporter=spec tests/unit/cursor-stream.test.mjs tests/unit/relation-index.test.mjs tests/unit/cursor-batch.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused protocol/relation/checkpoint suite: 19/19 passed. It covers strict v1/v2 separation, edge validation, path confinement, cross-TU deduplication, highest-confidence retention, checkpoint resume, mixed-mode rejection, and paired-count tamper rejection.
+- Full repository CI: 100/100 passed; formatting, security-boundary lint, build, native-aware permissive-license audit, and CycloneDX generation with one declared native dependency passed.
+- Release policy passed for `0.1.0`.
+
+Known limitations and next work:
+
+- The fixed C++20 libclang executable still emits protocol version 1 symbols only. No relation is represented as native evidence by this increment.
+- The next P1-10 increment must implement and calibrate native `calls`, `references`, `inherits`, `overrides`, and `include` emission, while continuing to prohibit native `owns` records.
+- A committed C++ relation gold and review-bound evaluator must prove precision and recall of at least 95% without treating automated technical success as named UE reviewer acceptance.
+- Any native binary change requires repeated `/Brepro` builds and renewed runtime artifact hash, SBOM, notice, diagnostic sample, and formal release/license review evidence.
+- Relation persistence must resolve accepted USRs and file bindings transactionally within the same building generation and must not publish or mark that generation ready.
+- All recorded P1-09, clean-revision, encrypted-SVN, production-target-matrix, database, license, reviewer, and global G1 governance blockers remain explicit. Phase 2 remains frozen.
+
+Next work: continue P1-10 from the fixed native emitter and committed relation-gold corpus on the single `codex/phase-1-foundation` development line after repository consolidation. Do not enter Phase 2.

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import type { ExtractedFileEdge, ExtractedSymbolEdge, RelationShard } from './relation-index.ts';
 
 export interface CursorIndexerRequest {
   executable: string;
@@ -47,12 +48,16 @@ export interface CursorIndexResult {
   error_count: number;
   unidentified_count: number;
   symbols: readonly CursorSymbol[];
+  relation_shard?: RelationShard;
 }
 
 const SYMBOL_KINDS = new Set(['namespace', 'class', 'struct', 'union', 'enum', 'enumerator', 'function', 'method', 'constructor', 'destructor', 'variable', 'field', 'parameter', 'typedef', 'type_alias', 'macro', 'concept']);
 const MAX_OUTPUT_BYTES = 512 * 1024 * 1024;
 const MAX_RECORDS = 2_000_001;
 const MAX_LINE_BYTES = 4 * 1024 * 1024;
+const RELATION_EDGE_TYPES = new Set(['calls', 'references', 'inherits', 'overrides']);
+const MAX_RELATION_TEXT = 4096;
+const MAX_RELATION_COORDINATE = 10_000_000;
 
 function below(root: string, value: string, name: string): string {
   if (!path.isAbsolute(root) || !path.isAbsolute(value)) throw new TypeError(`${name} must be absolute`);
@@ -130,6 +135,19 @@ function count(value: unknown, name: string): number {
   return value as number;
 }
 
+function relationText(value: unknown, name: string): string {
+  const encoded = string(value, name);
+  if (encoded.length > MAX_RELATION_TEXT) throw new TypeError(`${name} is invalid`);
+  return encoded;
+}
+
+function relationCoordinate(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > MAX_RELATION_COORDINATE) {
+    throw new TypeError(`${name} is invalid`);
+  }
+  return value as number;
+}
+
 function documentation(value: string): string | undefined {
   const normalized = value.split(/\r?\n/).map((line) => line.replace(/\*\/\s*$/, '').replace(/^\s*(?:\/\/\/?|\/\*\*?|\*)\s?/, '').trimEnd()).join('\n').trim();
   return normalized || undefined;
@@ -150,6 +168,9 @@ export function parseCursorIndexerJsonLines(output: string, workspaceRoots: read
   const locationKeys = new Map<string, Set<string>>();
   const symbolRecordCounts = new Map<string, number>();
   const ambiguousUsrs = new Set<string>();
+  const symbolEdges: ExtractedSymbolEdge[] = [];
+  const fileEdges: ExtractedFileEdge[] = [];
+  let protocolVersion: 1 | 2 | undefined;
   let unidentified = 0;
   for (let index = 0; index < lines.length; index += 1) {
     let parsed: unknown;
@@ -157,11 +178,46 @@ export function parseCursorIndexerJsonLines(output: string, workspaceRoots: read
     const value = object(parsed, 'cursor index record');
     if (index === 0) {
       exactKeys(value, ['type', 'schema_version', 'libclang', 'diagnostic_count', 'error_count'], 'cursor manifest');
-      if (value.type !== 'manifest' || value.schema_version !== 1) throw new TypeError('cursor manifest version is invalid');
+      if (value.type !== 'manifest' || (value.schema_version !== 1 && value.schema_version !== 2)) throw new TypeError('cursor manifest version is invalid');
       string(value.libclang, 'libclang version');
       count(value.diagnostic_count, 'diagnostic count');
       count(value.error_count, 'error count');
+      protocolVersion = value.schema_version;
       manifest = value;
+      continue;
+    }
+    if (value.type === 'symbol_edge') {
+      if (protocolVersion !== 2) throw new TypeError('cursor relation record requires protocol version 2');
+      exactKeys(value, ['type', 'edge_type', 'src_usr', 'dst_usr', 'file', 'line', 'column', 'confidence'], 'cursor symbol edge');
+      const edgeType = string(value.edge_type, 'cursor relation edge type');
+      if (!RELATION_EDGE_TYPES.has(edgeType)) throw new TypeError('cursor relation edge type is unsupported');
+      const srcUsr = relationText(value.src_usr, 'cursor relation source USR');
+      const dstUsr = relationText(value.dst_usr, 'cursor relation destination USR');
+      if ((edgeType === 'inherits' || edgeType === 'overrides') && srcUsr === dstUsr) throw new TypeError('cursor relation identity is invalid');
+      const fileValue = relationText(value.file, 'cursor relation file');
+      const file = roots.map((root) => { try { return below(root, fileValue, 'cursor relation file'); } catch { return undefined; } }).find((candidate) => candidate !== undefined);
+      const line = relationCoordinate(value.line, 'cursor relation line');
+      const column = relationCoordinate(value.column, 'cursor relation column');
+      if (file === undefined || typeof value.confidence !== 'number' || !Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1) {
+        throw new TypeError('cursor relation evidence is invalid');
+      }
+      symbolEdges.push(Object.freeze({ edge_type: edgeType as ExtractedSymbolEdge['edge_type'], src_usr: srcUsr, dst_usr: dstUsr, file, line, column, confidence: value.confidence }));
+      continue;
+    }
+    if (value.type === 'file_edge') {
+      if (protocolVersion !== 2) throw new TypeError('cursor relation record requires protocol version 2');
+      exactKeys(value, ['type', 'edge_type', 'src_file', 'dst_file', 'line', 'column'], 'cursor file edge');
+      if (value.edge_type !== 'include') throw new TypeError('cursor file edge type is unsupported');
+      const resolveFile = (candidate: unknown, name: string): string | undefined => {
+        const encoded = relationText(candidate, name);
+        return roots.map((root) => { try { return below(root, encoded, name); } catch { return undefined; } }).find((item) => item !== undefined);
+      };
+      const srcFile = resolveFile(value.src_file, 'cursor include source file');
+      const dstFile = resolveFile(value.dst_file, 'cursor include destination file');
+      const line = relationCoordinate(value.line, 'cursor include line');
+      const column = relationCoordinate(value.column, 'cursor include column');
+      if (srcFile === undefined || dstFile === undefined || srcFile === dstFile) throw new TypeError('cursor include evidence is invalid');
+      fileEdges.push(Object.freeze({ edge_type: 'include', src_file: srcFile, dst_file: dstFile, line, column }));
       continue;
     }
     exactKeys(value, ['type', 'kind', 'usr', 'name', 'display_name', 'qualified_name', 'owner_usr', 'is_definition', 'file', 'start_line', 'start_column', 'end_line', 'end_column', 'type_spelling', 'result_type', 'documentation'], 'cursor symbol');
@@ -227,5 +283,6 @@ export function parseCursorIndexerJsonLines(output: string, workspaceRoots: read
     diagnostic_count: manifest.diagnostic_count as number, error_count: manifest.error_count as number,
     unidentified_count: unidentified,
     symbols: Object.freeze([...symbols.values()].sort((left, right) => left.stable_usr.localeCompare(right.stable_usr, 'en'))),
+    ...(protocolVersion === 2 ? { relation_shard: Object.freeze({ schema_version: 1, symbol_edges: Object.freeze(symbolEdges), file_edges: Object.freeze(fileEdges) }) } : {}),
   });
 }

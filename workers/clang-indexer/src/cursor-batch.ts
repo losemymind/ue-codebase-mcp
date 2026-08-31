@@ -10,6 +10,7 @@ import {
   type CursorLocation,
   type CursorSymbol,
 } from './cursor-stream.ts';
+import { mergeRelationShards, type RelationShard } from './relation-index.ts';
 
 export type CursorBatchErrorCode =
   | 'action-failed'
@@ -56,6 +57,10 @@ export interface CursorBatchReport extends CursorIndexResult {
   attempt_count: number;
   deduplicated_symbol_records: number;
   deduplicated_locations: number;
+  source_symbol_edge_records: number;
+  source_file_edge_records: number;
+  deduplicated_symbol_edges: number;
+  deduplicated_file_edges: number;
 }
 
 export type CursorBatchActionExecutor = (
@@ -75,6 +80,8 @@ interface CheckpointPayload {
   attempt_count: number;
   source_symbol_records: number;
   source_location_records: number;
+  source_symbol_edge_records?: number;
+  source_file_edge_records?: number;
   aggregate: CursorIndexResult;
 }
 
@@ -211,16 +218,24 @@ function mergeSymbol(existing: CursorSymbol | undefined, incoming: CursorSymbol)
   });
 }
 
-export function mergeCursorIndexResults(results: readonly CursorIndexResult[]): CursorIndexResult {
+export function mergeCursorIndexResults(
+  results: readonly CursorIndexResult[],
+  workspaceRoots: readonly string[] = [],
+): CursorIndexResult {
   if (!Array.isArray(results) || results.length === 0) throw new CursorBatchError('invalid-plan');
   const libclang = results[0].libclang;
+  const relationMode = results[0].relation_shard !== undefined;
+  const relationShards: RelationShard[] = [];
   const symbols = new Map<string, CursorSymbol>();
   const ambiguousUsrs = new Set<string>();
   let diagnosticCount = 0;
   let errorCount = 0;
   let unidentifiedCount = 0;
   for (const result of results) {
-    if (result.schema_version !== 1 || result.libclang !== libclang) throw new CursorBatchError('symbol-conflict');
+    if (result.schema_version !== 1 || result.libclang !== libclang || (result.relation_shard !== undefined) !== relationMode) {
+      throw new CursorBatchError('symbol-conflict');
+    }
+    if (result.relation_shard !== undefined) relationShards.push(result.relation_shard);
     diagnosticCount += result.diagnostic_count;
     errorCount += result.error_count;
     unidentifiedCount += result.unidentified_count;
@@ -241,6 +256,15 @@ export function mergeCursorIndexResults(results: readonly CursorIndexResult[]): 
       }
     }
   }
+  let relationShard: RelationShard | undefined;
+  if (relationMode) {
+    if (!Array.isArray(workspaceRoots) || workspaceRoots.length === 0) throw new CursorBatchError('invalid-plan');
+    try {
+      relationShard = mergeRelationShards(relationShards, workspaceRoots).shard;
+    } catch {
+      throw new CursorBatchError('symbol-conflict');
+    }
+  }
   return Object.freeze({
     schema_version: 1,
     libclang,
@@ -248,12 +272,13 @@ export function mergeCursorIndexResults(results: readonly CursorIndexResult[]): 
     error_count: errorCount,
     unidentified_count: unidentifiedCount,
     symbols: Object.freeze([...symbols.values()].sort((left, right) => left.stable_usr.localeCompare(right.stable_usr, 'en'))),
+    ...(relationShard === undefined ? {} : { relation_shard: relationShard }),
   });
 }
 
 function validatePersistedResult(value: unknown, roots: readonly string[]): CursorIndexResult {
   const result = object(value);
-  exactKeys(result, ['schema_version', 'libclang', 'diagnostic_count', 'error_count', 'unidentified_count', 'symbols']);
+  exactKeys(result, ['schema_version', 'libclang', 'diagnostic_count', 'error_count', 'unidentified_count', 'symbols'], ['relation_shard']);
   if (result.schema_version !== 1 || !Array.isArray(result.symbols) || result.symbols.length > 2_000_000) throw new CursorBatchError('invalid-checkpoint');
   const symbols = result.symbols.map((candidate) => {
     const symbol = object(candidate);
@@ -284,6 +309,19 @@ function validatePersistedResult(value: unknown, roots: readonly string[]): Curs
       signature_hash: signatureHash, locations: Object.freeze(locations),
     }) as CursorSymbol;
   });
+  let relationShard: RelationShard | undefined;
+  if (result.relation_shard !== undefined) {
+    try {
+      const merged = mergeRelationShards([result.relation_shard as RelationShard], roots);
+      if (merged.deduplicated_symbol_edges !== 0 || merged.deduplicated_file_edges !== 0
+          || JSON.stringify(merged.shard) !== JSON.stringify(result.relation_shard)) {
+        throw new CursorBatchError('invalid-checkpoint');
+      }
+      relationShard = merged.shard;
+    } catch {
+      throw new CursorBatchError('invalid-checkpoint');
+    }
+  }
   return Object.freeze({
     schema_version: 1,
     libclang: boundedString(result.libclang),
@@ -291,6 +329,7 @@ function validatePersistedResult(value: unknown, roots: readonly string[]): Curs
     error_count: safeInteger(result.error_count, 2_000_000_000),
     unidentified_count: safeInteger(result.unidentified_count, 2_000_000_000),
     symbols: Object.freeze(symbols),
+    ...(relationShard === undefined ? {} : { relation_shard: relationShard }),
   });
 }
 
@@ -309,9 +348,15 @@ function parseCheckpoint(text: string, roots: readonly string[]): CheckpointPayl
   exactKeys(payload, [
     'schema_version', 'batch_id', 'plan_hash', 'batch_index', 'start_index', 'end_index', 'action_hashes',
     'attempt_count', 'source_symbol_records', 'source_location_records', 'aggregate',
-  ]);
+  ], ['source_symbol_edge_records', 'source_file_edge_records']);
   if (payload.schema_version !== 1 || !BATCH_ID.test(boundedString(payload.batch_id)) || !HASH.test(boundedString(payload.plan_hash))
       || !Array.isArray(payload.action_hashes) || payload.action_hashes.some((hash) => typeof hash !== 'string' || !HASH.test(hash))) {
+    throw new CursorBatchError('invalid-checkpoint');
+  }
+  const aggregate = validatePersistedResult(payload.aggregate, roots);
+  const hasSymbolEdgeCount = payload.source_symbol_edge_records !== undefined;
+  const hasFileEdgeCount = payload.source_file_edge_records !== undefined;
+  if (hasSymbolEdgeCount !== hasFileEdgeCount || hasSymbolEdgeCount !== (aggregate.relation_shard !== undefined)) {
     throw new CursorBatchError('invalid-checkpoint');
   }
   return {
@@ -325,7 +370,11 @@ function parseCheckpoint(text: string, roots: readonly string[]): CheckpointPayl
     attempt_count: safeInteger(payload.attempt_count, 1_000_000),
     source_symbol_records: safeInteger(payload.source_symbol_records, 2_000_000_000),
     source_location_records: safeInteger(payload.source_location_records, 2_000_000_000),
-    aggregate: validatePersistedResult(payload.aggregate, roots),
+    ...(hasSymbolEdgeCount ? {
+      source_symbol_edge_records: safeInteger(payload.source_symbol_edge_records, 2_000_000_000),
+      source_file_edge_records: safeInteger(payload.source_file_edge_records, 2_000_000_000),
+    } : {}),
+    aggregate,
   };
 }
 
@@ -557,6 +606,8 @@ export async function runCursorBatch(
   let attempts = 0;
   let sourceSymbols = 0;
   let sourceLocations = 0;
+  let sourceSymbolEdges = 0;
+  let sourceFileEdges = 0;
   for (let index = 0; index < checkpoints.length; index += 1) {
     const checkpoint = checkpoints[index];
     const expectedEnd = Math.min(completed + batchSize, request.commands.length);
@@ -570,15 +621,19 @@ export async function runCursorBatch(
     attempts += checkpoint.attempt_count;
     sourceSymbols += checkpoint.source_symbol_records;
     sourceLocations += checkpoint.source_location_records;
+    sourceSymbolEdges += checkpoint.source_symbol_edge_records ?? 0;
+    sourceFileEdges += checkpoint.source_file_edge_records ?? 0;
     aggregates.push(checkpoint.aggregate);
   }
   while (completed < request.commands.length) {
     const start = completed;
     const end = Math.min(start + batchSize, request.commands.length);
     const execution = await executeBatch(request, roots, start, end, concurrency, maxAttempts, canonicalStateRoot, executor);
-    const aggregate = mergeCursorIndexResults(execution.results);
+    const aggregate = mergeCursorIndexResults(execution.results, roots);
     const batchSymbols = execution.results.reduce((total, result) => total + result.symbols.length, 0);
     const batchLocations = execution.results.reduce((total, result) => total + result.symbols.reduce((count, symbol) => count + symbol.locations.length, 0), 0);
+    const batchSymbolEdges = execution.results.reduce((total, result) => total + (result.relation_shard?.symbol_edges.length ?? 0), 0);
+    const batchFileEdges = execution.results.reduce((total, result) => total + (result.relation_shard?.file_edges.length ?? 0), 0);
     const payload: CheckpointPayload = {
       schema_version: 1,
       batch_id: request.batch_id,
@@ -590,6 +645,10 @@ export async function runCursorBatch(
       attempt_count: execution.attempts,
       source_symbol_records: batchSymbols,
       source_location_records: batchLocations,
+      ...(aggregate.relation_shard === undefined ? {} : {
+        source_symbol_edge_records: batchSymbolEdges,
+        source_file_edge_records: batchFileEdges,
+      }),
       aggregate,
     };
     await store.append(payload);
@@ -598,9 +657,13 @@ export async function runCursorBatch(
     attempts += execution.attempts;
     sourceSymbols += batchSymbols;
     sourceLocations += batchLocations;
+    sourceSymbolEdges += batchSymbolEdges;
+    sourceFileEdges += batchFileEdges;
   }
-  const aggregate = mergeCursorIndexResults(aggregates);
+  const aggregate = mergeCursorIndexResults(aggregates, roots);
   const uniqueLocations = aggregate.symbols.reduce((total, symbol) => total + symbol.locations.length, 0);
+  const uniqueSymbolEdges = aggregate.relation_shard?.symbol_edges.length ?? 0;
+  const uniqueFileEdges = aggregate.relation_shard?.file_edges.length ?? 0;
   return Object.freeze({
     ...aggregate,
     batch_id: request.batch_id,
@@ -611,5 +674,9 @@ export async function runCursorBatch(
     attempt_count: attempts,
     deduplicated_symbol_records: sourceSymbols - aggregate.symbols.length,
     deduplicated_locations: sourceLocations - uniqueLocations,
+    source_symbol_edge_records: sourceSymbolEdges,
+    source_file_edge_records: sourceFileEdges,
+    deduplicated_symbol_edges: sourceSymbolEdges - uniqueSymbolEdges,
+    deduplicated_file_edges: sourceFileEdges - uniqueFileEdges,
   });
 }

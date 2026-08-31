@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
@@ -34,6 +35,20 @@ function symbol(file, extra = {}) {
 
 function result(file) {
   return { schema_version: 1, libclang: 'clang version 19.1.5', diagnostic_count: 0, error_count: 0, unidentified_count: 0, symbols: [symbol(file)] };
+}
+
+function relationResult(file, confidence = 1) {
+  return {
+    ...result(file),
+    relation_shard: {
+      schema_version: 1,
+      symbol_edges: [{
+        edge_type: 'calls', src_usr: 'c:@F@Shared#', dst_usr: 'c:@F@Target#',
+        file: sourceA, line: 3, column: 5, confidence,
+      }],
+      file_edges: [{ edge_type: 'include', src_file: sourceA, dst_file: sourceB, line: 1, column: 1 }],
+    },
+  };
 }
 
 function request(overrides = {}) {
@@ -123,6 +138,32 @@ test('cursor batch fails closed on plan drift and checkpoint tampering, and drop
   ]);
   assert.equal(ambiguous.symbols.length, 0);
   assert.equal(ambiguous.unidentified_count, 2);
+});
+
+test('cursor batch checkpoints relation shards, deduplicates across TUs, and rejects mixed or partial relation state', async () => {
+  await resetFixture();
+  const confidenceBySource = new Map([[sourceA, 0.4], [sourceB, 1], [sourceC, 0.8]]);
+  const report = await runCursorBatch(request(), async (invocation) => relationResult(
+    invocation.args[1], confidenceBySource.get(invocation.args[1]),
+  ));
+  assert.equal(report.source_symbol_edge_records, 3);
+  assert.equal(report.source_file_edge_records, 3);
+  assert.equal(report.deduplicated_symbol_edges, 2);
+  assert.equal(report.deduplicated_file_edges, 2);
+  assert.equal(report.relation_shard.symbol_edges.length, 1);
+  assert.equal(report.relation_shard.symbol_edges[0].confidence, 1);
+  assert.equal(report.relation_shard.file_edges.length, 1);
+
+  const resumed = await runCursorBatch(request(), async () => { throw new Error('completed relation action was repeated'); });
+  assert.deepEqual(resumed, report);
+  assert.throws(() => mergeCursorIndexResults([result(sourceA), relationResult(sourceB)], [workspace]), { code: 'symbol-conflict' });
+
+  const checkpointPath = path.join(checkpointDirectory, 'checkpoint-000000.json');
+  const checkpoint = JSON.parse(await readFile(checkpointPath, 'utf8'));
+  delete checkpoint.payload.source_file_edge_records;
+  checkpoint.payload_sha256 = createHash('sha256').update(JSON.stringify(checkpoint.payload)).digest('hex');
+  await writeFile(checkpointPath, `${JSON.stringify(checkpoint)}\n`, 'utf8');
+  await assert.rejects(runCursorBatch(request(), async () => relationResult(sourceA)), { code: 'invalid-checkpoint' });
 });
 
 test('cursor batch never executes the compile database compiler and rejects forged normalized actions', async () => {
