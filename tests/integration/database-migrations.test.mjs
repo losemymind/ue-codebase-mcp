@@ -49,7 +49,7 @@ function tableNames(sql, operation) {
 
 test('migration manifest is contiguous and every migration is transactional', async () => {
   assert.equal(manifest.schema, 'ue_mcp');
-  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4]);
+  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5]);
 
   for (const migration of manifest.migrations) {
     for (const direction of ['up', 'down']) {
@@ -89,6 +89,24 @@ test('P1-10 persistence migration atomically binds relation imports after symbol
   assert.match(up, /relations_imported_at IS NULL OR symbols_imported_at IS NOT NULL/);
   assert.match(up, /VALUES \(4, 'p1_10_relation_persistence'/);
   assert.match(down, /version = 4 AND name = 'p1_10_relation_persistence'/);
+});
+
+test('P1-12 persistence migration adds stable chunk identity and atomic import markers', async () => {
+  const up = await readFile(path.join(migrationRoot, '0005_p1_12_chunk_persistence.up.sql'), 'utf8');
+  const down = await readFile(path.join(migrationRoot, '0005_p1_12_chunk_persistence.down.sql'), 'utf8');
+  for (const field of ['stable_key', 'content_hash', 'start_line', 'start_column', 'end_line', 'end_column', 'part_index', 'part_count']) {
+    assert.match(up, new RegExp(`ADD COLUMN ${field}\\b`));
+    assert.match(down, new RegExp(`DROP COLUMN ${field}\\b`));
+  }
+  for (const field of ['chunk_plan_hash', 'chunk_payload_hash', 'code_chunk_count', 'chunks_imported_at']) {
+    assert.match(up, new RegExp(`ADD COLUMN ${field}\\b`));
+    assert.match(down, new RegExp(`DROP COLUMN ${field}\\b`));
+  }
+  assert.match(up, /code_chunks_generation_stable_key_unique UNIQUE \(generation_id, stable_key\)/);
+  assert.doesNotMatch(up, /\bdigest\s*\(/);
+  assert.match(up, /index_generations_chunk_import_state_check/);
+  assert.match(up, /chunks_imported_at IS NULL OR symbols_imported_at IS NOT NULL/);
+  assert.match(up, /VALUES \(5, 'p1_12_chunk_persistence'/);
 });
 
 test('core migration covers phase 1 sections 5.1 through 5.3 and 5.5 only', async () => {

@@ -230,7 +230,7 @@ ue-codebase-mcp/
 | `symbol_locations` | `symbol_id`, `location_kind`, `file_id`, `start_line/column`, `end_line/column` |
 | `symbol_metadata` | `symbol_id`, UHT specifiers/meta、Blueprint exposure、documentation |
 | `symbol_edges` | `src_symbol_id`, `edge_type`, `dst_symbol_id`, `file_id`, `line`, `confidence`; composite edge index |
-| `code_chunks` | `id`, `generation_id`, `symbol_id`, `file_id`, `chunk_kind`, `text`, `token_count`, `search_vector` |
+| `code_chunks` | `id`, `generation_id`, stable/content hashes, `symbol_id`, `file_id`, `chunk_kind`, source range/part identity, `text`, `token_count`, `search_vector` |
 | `chunk_embeddings` | `chunk_id`, `provider`, `model`, `dimensions`, `embedding`, `content_hash`; vector index |
 
 ### 5.4 UE 资产和节点图
@@ -486,4 +486,3 @@ ue-codebase-mcp/
 - Codex Desktop/CLI/IDE、Claude Code、Cursor、OpenCode 配置示例。
 - 单元、集成、E2E、兼容、性能、安全、DR 和评测报告。
 - SBOM、第三方许可证报告、签名发布产物和回滚包。
-

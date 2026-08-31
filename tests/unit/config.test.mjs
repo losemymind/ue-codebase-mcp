@@ -83,6 +83,7 @@ test('provider endpoint is HTTPS, administrator allowlisted, and approval-gated'
     'CONFIG_PROVIDER_ENDPOINT_DENIED',
   );
   expectConfigError(() => loadConfig(provider.replace('enabled: false', 'enabled: true')), 'CONFIG_PROVIDER_APPROVAL_REQUIRED');
+  expectConfigError(() => loadConfig(provider.replace('dimensions: 1536', 'dimensions: 16001')), 'CONFIG_SCHEMA_INVALID');
 });
 
 test('presets reject arbitrary commands, arguments, environment, and output paths', async () => {
@@ -127,6 +128,7 @@ test('published JSON Schemas are v1, closed, and include secret/preset boundarie
   assert.equal(schemas[0].additionalProperties, false);
   assert.equal(schemas[1].properties.kind.const, 'svn');
   assert.equal(schemas[2].properties.credential.$ref, 'common-v1.schema.json#/$defs/secretCredential');
+  assert.equal(schemas[2].properties.embedding.properties.dimensions.maximum, 16000);
   assert.ok(schemas[3].$defs.ubt.additionalProperties === false);
   assert.equal(schemas[3].$defs.ubt.properties.kind.const, 'ubt_build');
   assert.equal(schemas[3].$defs.uat.properties.kind.const, 'uat_test');

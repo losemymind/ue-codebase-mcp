@@ -62,7 +62,7 @@
         "dimensions": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 65535
+          "maximum": 16000
         }
       }
     },

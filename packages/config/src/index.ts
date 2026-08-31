@@ -477,7 +477,7 @@ function validateProvider(value: unknown, source: string): ProviderConfig {
     credential: secretReference(object.credential, 'provider.credential', source),
     embedding: {
       model: stringValue(embeddingObject.model, 'provider.embedding.model', source, MODEL_IDENTIFIER),
-      dimensions: integerValue(embeddingObject.dimensions, 'provider.embedding.dimensions', source, 1, 65_535),
+      dimensions: integerValue(embeddingObject.dimensions, 'provider.embedding.dimensions', source, 1, 16_000),
     },
     data_processing_approved: approved,
     enabled,

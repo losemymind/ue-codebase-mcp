@@ -797,3 +797,44 @@ Known limitations and next work:
 - Named review of the exact relation-gold payload, clean pinned Engine+project accuracy evidence, production target/configuration approval, encrypted SVN policy, formal native license/release review and all global G1 governance items remain explicit blockers. Phase 2 remains frozen.
 
 Next work: treat the dependency-unblocked P1-10 implementation as technically complete but not accepted. Continue with the next unblocked Phase 1 dependency path while scheduling live migration rehearsal and named clean-corpus relation review; do not create another development branch or enter Phase 2.
+
+## P1-12 increment — AST-aware chunks, FTS and embedding pipeline
+
+Status: deterministic symbol-aware chunking, FTS-backed transactional storage, provider-neutral batching/cache/retry controls and embedding persistence are technically implemented on 2026-08-31. Live PostgreSQL+pgvector rehearsal, an approved production provider/executor, model-specific ANN validation and representative retrieval evaluation remain pending, so P1-12 is not formally accepted.
+
+Deliverables:
+
+- The Clang indexer converts exact declaration and definition ranges into bounded chunks associated by the same stable USR. Preferred definition locations also anchor normalized documentation chunks. Input source text is injected explicitly; missing files and invalid/empty ranges are counted instead of triggering arbitrary filesystem reads or invented snippets.
+- Chunk output is deterministic across symbol/source ordering. Each row carries a SHA-256 stable identity, SHA-256 content hash, estimated provider-neutral token count, exact source coordinates when applicable and deterministic part index/count. Oversized ranges split on lexical segments under configurable byte/token budgets without losing content.
+- Migration `0005_p1_12_chunk_persistence` extends `code_chunks` with stable/content hashes, source ranges and split identity, adds generation-scoped stable-key uniqueness, and binds completed chunk imports to an all-or-nothing plan hash/payload hash/count/timestamp marker that requires symbol import completion. Pre-P1-12 rows receive extension-free placeholders and remain dirty/unpublishable until rebuilt.
+- The chunk coordinator uses only fixed named parameterized SQL. It locks the building generation, validates exact revision/plan state, proves the target is empty, resolves every used file and stable USR in that same generation, validates stable/content/token fingerprints, inserts bounded batches and records completion last in the same transaction. Replays succeed only for the identical fingerprint; partial, cross-generation, short and adapter-failure paths roll back and return redacted error classes.
+- The pre-existing `simple` generated `tsvector` and GIN index provide the Phase 1 lexical/FTS data plane for every inserted chunk. Query fusion/ranking and retrieval evaluation remain P1-13 work; this increment does not misrepresent PostgreSQL FTS as a completed hybrid ranker.
+- The provider SDK accepts only an already enabled and data-processing-approved provider configuration. It validates content SHA-256, deduplicates identical content before transfer, enforces item/byte/estimated-token batch bounds, validates finite response dimensions, retries only caller-classified transient failures and opens a bounded circuit breaker.
+- Every retry of one batch reuses a deterministic idempotency key. The project UUID is included in cache and idempotency identities, preventing cross-project cache reuse while allowing same-project reuse across generations. Provider request/response bodies remain confined to the injected executor and are never included in pipeline errors or reports.
+- A persistent cache adapter reads an existing same-project `chunk_embeddings` row by provider/model/dimensions/content hash and keeps new results in a run-local cache until persistence. Completed content therefore avoids a new provider request; a crash between provider success and database commit relies on the executor transmitting the unchanged provider idempotency key.
+- Embedding persistence locks the generation, requires completed chunk import, resolves every stable chunk key and exact content hash, rejects partial prior state, and inserts dimension-checked pgvector rows transactionally. An exact completed replay is read-only. The provider configuration dimension ceiling is now aligned with the database constraint at 16,000.
+- No network client, credential resolution, provider endpoint or production approval was fabricated. The executor/cache/database surfaces remain narrow injected ports for later deployment wiring.
+
+Verification commands and results:
+
+```powershell
+node --test --test-reporter=spec tests/unit/code-chunking.test.mjs tests/unit/chunk-persistence.test.mjs tests/unit/embedding-pipeline.test.mjs tests/unit/embedding-persistence.test.mjs tests/unit/config.test.mjs tests/integration/database-migrations.test.mjs
+npm run ci
+npm run release:check
+where.exe psql
+```
+
+- Focused P1-12/config/migration coverage passed 36/36 before final integration, including declaration/definition/documentation association, deterministic splitting and identity, missing sources, transactional resume/rollback, cache deduplication, project isolation, fixed retry idempotency, circuit breaking, response validation, content drift and redacted failures.
+- Full repository CI passed 130/130. Formatting, security-boundary lint, build, native-aware permissive-license audit and CycloneDX generation with one declared native dependency passed. Release policy passed for `0.1.0`.
+- The destructive migration rehearsal now targets version 5, exercises partial chunk-marker and chunk-before-symbol constraint failures, rolls migration 5 back independently to version 4 and then performs the existing complete rollback/re-upgrade sequence.
+- `where.exe psql` found no executable. The SQL and transaction behavior therefore have static and synthetic evidence only; no fake adapter result is represented as live PostgreSQL acceptance.
+
+Known limitations and next work:
+
+- `EmbeddingBatchExecutor` is a contract, not an approved HTTP client. Production wiring must resolve the configured secret out of process arguments/logs, enforce TLS and the endpoint allowlist, transmit the exact idempotency key in the provider-supported mechanism, apply real timeout/rate policy and prove request bodies never reach telemetry.
+- Billing deduplication is guaranteed locally for completed cache entries and duplicate content in one run. Exactly-once billing across an ambiguous network failure additionally depends on the approved provider honoring the stable idempotency key; that behavior requires provider-specific fault-injection evidence and must not be assumed from the interface alone.
+- Token counts are conservative provider-independent estimates for storage and batch bounds, not claims about a provider tokenizer. The approved model may require a reviewed tokenizer adapter and recalibrated limits.
+- The baseline ANN index covers the configured example's 1,536 dimensions. If an approved provider uses another dimension, a model-specific partial ANN index and live query plan/performance evidence are required; no provider/model choice is fabricated here.
+- No clean representative Engine+project chunk corpus, FTS relevance gold, embedding quality evaluation or live provider outage/rate-limit exercise has run. These and all existing P1-09/P1-10/G1 blockers remain explicit. Phase 2 remains frozen.
+
+Next work: keep the single `codex/phase-1-foundation` development line. Treat P1-12 core implementation as technically complete but not accepted; continue with dependency-unblocked P1-13 hybrid retrieval while leaving live database/provider and named corpus review as explicit acceptance work. Do not enter Phase 2.
