@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "suite_id": "p1-13-bilingual-fusion-v1",
+  "minimum_recall_at_20": 0.9,
+  "cases": [
+    {
+      "case_id": "en-exact-run",
+      "language": "en",
+      "query": "Example Run method",
+      "relevant_chunk_keys": ["1111111111111111111111111111111111111111111111111111111111111111"]
+    },
+    {
+      "case_id": "en-call-impact",
+      "language": "en",
+      "query": "callers of Example Run",
+      "relevant_chunk_keys": ["2222222222222222222222222222222222222222222222222222222222222222"]
+    },
+    {
+      "case_id": "en-doc-behavior",
+      "language": "en",
+      "query": "where example work is documented",
+      "relevant_chunk_keys": ["3333333333333333333333333333333333333333333333333333333333333333"]
+    },
+    {
+      "case_id": "zh-exact-run",
+      "language": "zh",
+      "query": "Example 的 Run 方法",
+      "relevant_chunk_keys": ["1111111111111111111111111111111111111111111111111111111111111111"]
+    },
+    {
+      "case_id": "zh-call-impact",
+      "language": "zh",
+      "query": "谁调用了 Example Run",
+      "relevant_chunk_keys": ["2222222222222222222222222222222222222222222222222222222222222222"]
+    },
+    {
+      "case_id": "zh-doc-behavior",
+      "language": "zh",
+      "query": "示例工作的说明在哪里",
+      "relevant_chunk_keys": ["3333333333333333333333333333333333333333333333333333333333333333"]
+    }
+  ],
+  "review": {
+    "status": "pending",
+    "reviewer": null,
+    "approved_at": null,
+    "payload_sha256": null
+  }
+}

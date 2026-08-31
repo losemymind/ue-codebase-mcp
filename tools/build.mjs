@@ -17,6 +17,11 @@ await import('../services/index-coordinator/src/symbol-persistence.ts');
 await import('../services/index-coordinator/src/relation-persistence.ts');
 await import('../services/index-coordinator/src/chunk-persistence.ts');
 await import('../services/index-coordinator/src/embedding-persistence.ts');
+await import('../services/retrieval/src/hybrid-ranking.ts');
+await import('../services/retrieval/src/retrieval-store.ts');
+await import('../services/retrieval/src/rerank.ts');
+await import('../services/retrieval/src/hybrid-retrieval.ts');
+await import('../services/retrieval/src/retrieval-gold.ts');
 await import('../packages/provider-sdk/src/index.ts');
 await import('../workers/clang-indexer/src/module-model.ts');
 await import('../workers/clang-indexer/src/code-chunking.ts');
@@ -34,7 +39,7 @@ await mkdir(path.join(configPackageDist, 'src'), { recursive: true });
 await cp(path.join(root, 'packages', 'config', 'package.json'), path.join(configPackageDist, 'package.json'));
 await cp(path.join(root, 'packages', 'config', 'src', 'index.ts'), path.join(configPackageDist, 'src', 'index.ts'));
 await cp(path.join(root, 'configs'), path.join(dist, 'configs'), { recursive: true, force: true });
-for (const source of ['packages/auth', 'packages/provider-sdk', 'services/index-coordinator', 'workers/clang-indexer', 'workers/svn-adapter', 'workers/windows-agent']) {
+for (const source of ['packages/auth', 'packages/provider-sdk', 'services/index-coordinator', 'services/retrieval', 'workers/clang-indexer', 'workers/svn-adapter', 'workers/windows-agent']) {
   await cp(path.join(root, source), path.join(dist, source), { recursive: true, force: true });
 }
 await cp(path.join(root, 'deploy', 'windows-service'), path.join(dist, 'deploy', 'windows-service'), { recursive: true, force: true });

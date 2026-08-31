@@ -838,3 +838,45 @@ Known limitations and next work:
 - No clean representative Engine+project chunk corpus, FTS relevance gold, embedding quality evaluation or live provider outage/rate-limit exercise has run. These and all existing P1-09/P1-10/G1 blockers remain explicit. Phase 2 remains frozen.
 
 Next work: keep the single `codex/phase-1-foundation` development line. Treat P1-12 core implementation as technically complete but not accepted; continue with dependency-unblocked P1-13 hybrid retrieval while leaving live database/provider and named corpus review as explicit acceptance work. Do not enter Phase 2.
+
+## P1-13 increment — authorized hybrid retrieval and bounded rerank
+
+Status: the fixed read-only retrieval store, exact/lexical/vector/graph fusion, deterministic diversity packing, optional provider-neutral rerank and a versioned bilingual fusion gold are technically implemented on 2026-08-31. Live PostgreSQL query-plan evidence, production path-ACL wiring, approved query embedding/rerank provider behavior and representative clean-corpus Recall@20 remain pending, so P1-13 is not formally accepted.
+
+Deliverables:
+
+- A retrieval store exposes four fixed named parameterized SQL statements/families for exact symbol-to-chunk lookup, PostgreSQL lexical FTS, pgvector similarity and one-hop graph signals. Callers cannot supply SQL, table names, operators or edge clauses. Query, limit, provider/model/dimension, finite vector, graph direction/type and result fields are strictly bounded; database details are reduced to safe error classes.
+- Every statement selects one explicit project/generation only when both project and generation are `active`. It accepts a nonempty trusted repository/path-prefix authorization scope plus an ACL-context hash, joins files back to a repository in the same project and applies path authorization before ranking. Exact and graph symbol hits are hydrated to authorized stable chunks inside SQL, so all four channels return one compatible chunk candidate shape.
+- FTS uses `plainto_tsquery('simple')`, `ts_rank_cd` and the existing generated GIN `tsvector`. It is documented as PostgreSQL lexical FTS rank, not BM25. Query strings are NFC-normalized and parameterized.
+- Vector lookup is pinned to the server-configured provider/model/dimension profile. The 1,536-dimensional path uses the matching partial HNSW expression and explicit `vector(1536)` casts; other approved dimensions use the bounded generic pgvector path and make no ANN performance claim. Similarity is clamped to a nonnegative candidate score before fusion.
+- Graph lookup is one-hop and candidate-bounded. Both anchor and candidate symbols must have an authorized same-generation source location/chunk; non-null edge evidence files must also pass same-project, same-generation path authorization. Edge types and direction come from closed allowlists.
+- Weighted reciprocal-rank fusion combines incomparable exact/FTS/vector/graph score scales without adding raw scores. It deduplicates source-local and cross-source stable chunk keys, rejects conflicting identities, preserves complete per-channel rank/score/contribution evidence, uses stable chunk keys for tie breaks and keeps the top exact hit first by default.
+- Diversity packing applies independent per-symbol and per-file caps and a final UTF-8 response budget. Disabled zero-weight channels cannot introduce candidates. No total count, arbitrary offset or unbounded snippet package is produced.
+- Optional rerank receives only the already authorized and bounded hybrid set. The configured provider must be enabled, data-processing-approved and have a rerank model. Requests have bounded query/item/body sizes, stable project-scoped idempotency keys and safe transient retries. Response keys must exactly match the input set; rerank can only reorder, never add a candidate. Provider/rerank failure preserves the hybrid order and reports a typed degradation.
+- A coordinating retrieval function runs mandatory exact+FTS channels, optionally requests vector/graph channels, fuses and packs candidates, applies rerank when configured and returns explicit requested/degraded signal lists. Inactive scope or mandatory lexical failure fails closed; optional dependency outages degrade without exposing underlying request/database/provider bodies.
+- The committed six-case English/Chinese fusion gold requires overall, English and Chinese Recall@20 to each be at least 90%. Its parser rejects extensions, weak thresholds, duplicates, unknown cases and incomplete approval. The current deterministic fusion result is 1.0 for all three measures, but review remains `pending`; the canonical payload SHA-256 is `44d008cbda0416c646bd2088c4da30c10338f3e095a668e2bc47fef83af74234` and automated success does not mark acceptance.
+
+Verification commands and results:
+
+```powershell
+node --test --test-reporter=spec tests/unit/hybrid-ranking.test.mjs tests/unit/retrieval-store.test.mjs tests/unit/rerank.test.mjs tests/unit/hybrid-retrieval.test.mjs tests/unit/retrieval-gold.test.mjs
+npm run ci
+npm run release:check
+where.exe psql
+```
+
+- Focused P1-13 coverage passed 30/30, including deterministic fusion/ties, exact preservation, zero-weight exclusion, source deduplication, identity conflicts, symbol/file diversity, active scope, path authorization contract, fixed embedding profile, 1,536/generic vector paths, graph allowlists, response budget, optional degradation, rerank set integrity/idempotency and bilingual Recall@20/review binding.
+- Full repository CI passed 160/160. Formatting, security-boundary lint, build, native-aware permissive-license audit and CycloneDX generation with one declared native dependency passed. Release policy passed for `0.1.0`.
+- `where.exe psql` found no executable. SQL syntax, plans, indexes, transaction snapshots and malicious cross-generation/cross-project rows therefore have static/synthetic evidence only; no fake adapter result is represented as live PostgreSQL acceptance.
+
+Known limitations and next work:
+
+- The current `svn_access_snapshots` table has repository/subject/revision scope but no path column, while the policy engine and security model require path-level SVN authorization. The store can enforce a trusted path scope before ranking, but production code cannot yet derive a complete path scope from the database alone. A reviewed external authorization-scope provider or schema migration plus negative live tests is required before P1-13 security acceptance.
+- `files` binds a repository but not a repository branch/revision directly. In a generation containing multiple branches of one repository, evidence revision mapping is ambiguous. Production evidence packaging must validate one branch per repository or add an explicit file-to-revision binding before claiming 100% revision accuracy.
+- The six-case gold proves parser/evaluator and fusion behavior over deterministic synthetic candidates. It does not prove Chinese semantic retrieval, UE identifier tokenization or production relevance. A named bilingual corpus with actual indexed Engine+project queries, expected stable USR/path/range evidence and an approved provider/model must independently achieve English and Chinese Recall@20 ≥90%.
+- The query-vector value is a trusted upstream input pinned to the configured embedding profile. Approved query-embedding HTTP execution, credential/TLS/timeout policy, provider outage capture and end-to-end vector quality remain deployment/integration work.
+- Rerank does not create authorization or recover filtered candidates. Exactly-once billing across ambiguous network failure still depends on the approved provider honoring the stable idempotency key.
+- P1-14 atomic generation publication is not implemented. The store deliberately sees only `active` generations, so a real end-to-end query cannot pass until P1-14 publishes one. Cursor pagination and MCP response evidence contracts remain P1-15 work.
+- No live concurrency/P95/P99, HNSW `EXPLAIN`, timing-side-channel, ACL-reduction or production-scale high-fanout exercise has run. All existing G1, P1-09, P1-10 and P1-12 external blockers remain explicit. Phase 2 remains frozen.
+
+Next work: keep the single `codex/phase-1-foundation` line and implement P1-14 generation staging validation, atomic publication, rollback and GC. This will make the already active-only P1-13 store testable end to end without weakening the recorded ACL/provider/live-database acceptance gates. Do not enter Phase 2.

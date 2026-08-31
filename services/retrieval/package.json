@@ -1,0 +1,17 @@
+{
+  "name": "@ue-codebase-mcp/retrieval",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": "./src/hybrid-retrieval.ts",
+    "./ranking": "./src/hybrid-ranking.ts",
+    "./store": "./src/retrieval-store.ts",
+    "./rerank": "./src/rerank.ts",
+    "./gold": "./src/retrieval-gold.ts"
+  },
+  "engines": {
+    "node": "24.18.0"
+  }
+}
