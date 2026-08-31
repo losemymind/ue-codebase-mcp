@@ -12,6 +12,12 @@
       "name": "phase_1_core",
       "up": "0002_phase_1_core.up.sql",
       "down": "0002_phase_1_core.down.sql"
+    },
+    {
+      "version": 3,
+      "name": "p1_09_symbol_persistence",
+      "up": "0003_p1_09_symbol_persistence.up.sql",
+      "down": "0003_p1_09_symbol_persistence.down.sql"
     }
   ]
 }

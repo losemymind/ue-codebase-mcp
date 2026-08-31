@@ -45,6 +45,15 @@ BEGIN
   ) RETURNING id INTO generation_id;
 
   BEGIN
+    UPDATE index_generations
+    SET symbol_plan_hash = decode(repeat('33', 32), 'hex')
+    WHERE id = generation_id;
+    RAISE EXCEPTION 'partial symbol import state was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
     INSERT INTO index_generations (
       project_id,
       revision_set_hash,

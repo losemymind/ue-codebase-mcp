@@ -41,10 +41,15 @@ try {
     throw 'Bootstrap migration did not produce version 1.'
   }
 
-  Invoke-Runner 'up' 2
+  Invoke-Runner 'up' 3
   & $PsqlPath -X -v ON_ERROR_STOP=1 "--dbname=$DatabaseName" -f $constraintTest
   if ($LASTEXITCODE -ne 0) {
     throw "Live constraint test failed with exit code $LASTEXITCODE"
+  }
+
+  Invoke-Runner 'down' 2
+  if ((Invoke-Query "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'ue_mcp' AND table_name = 'index_generations' AND column_name = 'symbols_imported_at';") -ne '0') {
+    throw 'P1-09 rollback left symbol import state behind.'
   }
 
   Invoke-Runner 'down' 1
@@ -52,9 +57,9 @@ try {
     throw 'Core rollback left business tables behind.'
   }
 
-  Invoke-Runner 'up' 2
-  if ((Invoke-Query 'SELECT max(version) FROM ue_mcp.schema_migrations;') -ne '2') {
-    throw 'Upgrade after rollback did not restore version 2.'
+  Invoke-Runner 'up' 3
+  if ((Invoke-Query 'SELECT max(version) FROM ue_mcp.schema_migrations;') -ne '3') {
+    throw 'Upgrade after rollback did not restore version 3.'
   }
 } finally {
   if ((Invoke-Query "SELECT to_regnamespace('ue_mcp') IS NOT NULL;") -eq 't') {

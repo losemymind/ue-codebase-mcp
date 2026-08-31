@@ -6,6 +6,11 @@ creates pgvector and migration metadata; migration `0002` creates only the Phase
 intentionally retained by a full rollback because another application may share
 it in the same database.
 
+Migration `0003` adds the full P1-09 symbol payload fields and an all-or-nothing
+generation import fingerprint. A completed symbol import binds the checkpoint
+plan hash, canonical payload hash, row counts, and completion timestamp; partial
+marker state is rejected by a database constraint.
+
 Use standard libpq environment variables (`PGHOST`, `PGPORT`, `PGUSER`,
 `PGPASSWORD`, `PGDATABASE`, and TLS variables as required) instead of embedding
 credentials in arguments. Apply all pending migrations with:

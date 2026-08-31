@@ -568,3 +568,41 @@ Known limitations and next work:
 - P1-09 still needs final PostgreSQL symbol/location persistence integration and named Engine+project gold review. Formal release/license review, encrypted SVN policy acceptance or an approved exception, clean revisions, the production target matrix, and the named UE reviewer for `dte80a.cpp` remain the external blockers.
 
 Next work: continue P1-09 with bounded transactional database persistence and named-gold comparison using the now checkpointed aggregate contract. Do not widen the diagnostic argument/error profile without review, and do not enter Phase 2 until every technical gate and human G1 sign-off is complete.
+
+## P1-09 increment — bounded transactional symbol persistence
+
+Status: migration, fixed transaction contract, deterministic/idempotent import behavior, and synthetic rollback evidence complete on 2026-08-31; live PostgreSQL+pgvector acceptance remains blocked because this environment has neither `psql` nor a configured disposable test database. Named-gold comparison and governance acceptance remain pending.
+
+Deliverables:
+
+- Migration `0003_p1_09_symbol_persistence` extends the existing Phase 1 schema without rewriting migration `0002`. It preserves `name`, `display_name`, raw `owner_usr`, type/result spellings, template parameters and clang-doc ID in addition to the existing USR, qualified name, kind, signature, exact locations, documentation and UHT/Blueprint metadata.
+- `index_generations` now carries an all-or-nothing symbol import marker: checkpoint plan hash, canonical payload hash, symbol/location counts and completion timestamp must be either entirely null or entirely present. The migration is transactional, checksum-tracked and has a targeted down migration.
+- The index coordinator exposes a dedicated symbol-persistence subpath with no general SQL or command input. It accepts only an existing generation UUID, revision-set hash, checkpoint plan hash, bounded indexed symbols and explicit source-path-to-file-UUID bindings.
+- The import locks one generation row, requires the exact revision set and `building` state, rejects unmarked pre-existing symbol rows, validates every file UUID against that generation, and uses only eight named parameterized SQL statements.
+- Symbols, owner links, exact locations and metadata are written in batches capped at 1,000 rows and 8 MiB JSON. The complete generation fingerprint is written last in the same caller-provided transaction; any row-count mismatch or adapter failure aborts the entire import.
+- Canonical payload hashing is input-order independent, uses persistent file UUIDs instead of machine-specific absolute roots, sorts symbol/location/UHT metadata deterministically, and rejects duplicate USRs/locations. Windows and POSIX source paths are normalized independently of the coordinator host OS.
+- A completed import is idempotently reusable only when plan hash, payload hash and both counts match exactly. Revision, plan, payload, file or dirty-generation drift fails closed. Database adapter errors are reduced to a safe `transaction-failed` class without returning driver details.
+- Raw owner USRs whose owner symbol is outside the accepted aggregate remain stored, leave `owner_symbol_id` null, and are explicitly counted as unresolved rather than silently discarded.
+- The opt-in destructive migration rehearsal now targets version 3, tests partial-import marker rejection, rolls migration 3 back independently to version 2, then verifies full rollback/re-upgrade. It still refuses databases whose name does not end in `test`.
+
+Verification commands and results:
+
+```powershell
+node --test tests/integration/database-migrations.test.mjs tests/unit/symbol-persistence.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused migration/persistence suite: 10/10 passed. It covers the version-3 migration contract, full-field persistence, deterministic hashing, owner resolution/unresolved counts, complete rollback, idempotent resume, revision/plan/file/dirty-state drift, duplicate identities/locations, bounded fixed statements and error redaction.
+- Full repository CI: 89/89 passed; formatting, boundary lint, build, native-aware license policy and CycloneDX generation with one declared native dependency passed.
+- Release policy passed for `0.1.0`.
+- `where.exe psql` returned no executable and `PGDATABASE` is unset. No mocked adapter result is represented as live PostgreSQL acceptance.
+
+Known limitations and next work:
+
+- `SymbolPersistenceDatabase` is a narrow transactional port, not a fabricated production connection. The approved PostgreSQL driver/pool, service role, TLS policy, statement timeouts and deployment secrets remain required before wiring the port to production.
+- Migration SQL and transaction semantics have static/synthetic evidence only until `npm run db:test:live` runs against a disposable PostgreSQL test database with pgvector. That live run must cover empty upgrade, v2-to-v3 upgrade, v3-only rollback, full rollback and re-upgrade.
+- Persistence deliberately does not mark a generation `ready` or publish it. P1-14 staging validation and atomic publication remain separate Phase 1 work and cannot consume this diagnostic corpus as accepted G1 data.
+- Modified/partial Engine+HT working copies, HTTP SVN policy, clean pinned revisions, the target matrix and named review of `dte80a.cpp` remain unchanged external blockers.
+
+Next work: implement the P1-09 named-gold comparator and exercise it over the committed synthetic class/template/overload/field/UHT fixture. Run live migration/persistence acceptance only when a disposable PostgreSQL+pgvector test database and approved connection policy are available. Phase 2 remains frozen.
