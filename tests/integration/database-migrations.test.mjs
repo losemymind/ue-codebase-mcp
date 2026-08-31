@@ -49,7 +49,7 @@ function tableNames(sql, operation) {
 
 test('migration manifest is contiguous and every migration is transactional', async () => {
   assert.equal(manifest.schema, 'ue_mcp');
-  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3]);
+  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4]);
 
   for (const migration of manifest.migrations) {
     for (const direction of ['up', 'down']) {
@@ -75,6 +75,20 @@ test('P1-09 persistence migration preserves full symbol data and binds atomic im
   assert.match(up, /index_generations_symbol_import_state_check/);
   assert.match(up, /VALUES \(3, 'p1_09_symbol_persistence'/);
   assert.match(down, /version = 3 AND name = 'p1_09_symbol_persistence'/);
+});
+
+test('P1-10 persistence migration atomically binds relation imports after symbols', async () => {
+  const up = await readFile(path.join(migrationRoot, '0004_p1_10_relation_persistence.up.sql'), 'utf8');
+  const down = await readFile(path.join(migrationRoot, '0004_p1_10_relation_persistence.down.sql'), 'utf8');
+  for (const field of ['relation_plan_hash', 'relation_payload_hash', 'symbol_edge_count', 'file_dependency_count', 'relations_imported_at']) {
+    assert.match(up, new RegExp(`ADD COLUMN ${field}\\b`));
+    assert.match(down, new RegExp(`DROP COLUMN ${field}\\b`));
+  }
+  assert.match(up, /index_generations_relation_import_state_check/);
+  assert.match(up, /index_generations_relation_requires_symbols_check/);
+  assert.match(up, /relations_imported_at IS NULL OR symbols_imported_at IS NOT NULL/);
+  assert.match(up, /VALUES \(4, 'p1_10_relation_persistence'/);
+  assert.match(down, /version = 4 AND name = 'p1_10_relation_persistence'/);
 });
 
 test('core migration covers phase 1 sections 5.1 through 5.3 and 5.5 only', async () => {

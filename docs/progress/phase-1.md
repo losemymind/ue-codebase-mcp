@@ -759,3 +759,41 @@ Known limitations and next work:
 - Formal native license/release review, live PostgreSQL+pgvector rehearsal, encrypted SVN policy, clean revisions, target-matrix approval, named relation-gold review and all global G1 governance items remain explicit blockers. Phase 2 remains frozen.
 
 Next work: implement bounded transactional relation persistence on the existing single `codex/phase-1-foundation` line, then obtain named review and clean representative accuracy evidence. Do not create another development branch or enter Phase 2.
+
+## P1-10 increment — bounded transactional relation persistence
+
+Status: migration, fixed transaction contract, deterministic/idempotent import behavior and synthetic rollback evidence are complete on 2026-08-31. Live PostgreSQL acceptance, named relation-gold review and representative clean Engine+project evidence remain pending; P1-10 is technically implemented but not formally accepted.
+
+Deliverables:
+
+- Migration `0004_p1_10_relation_persistence` adds an all-or-nothing relation import marker to `index_generations`: plan hash, canonical payload hash, persisted symbol-edge/file-dependency counts and completion timestamp must be entirely null or entirely populated. A second database constraint prohibits a completed relation import before symbol import completion.
+- The index coordinator exposes a dedicated relation-persistence port with no general SQL, table, command or path-write input. It accepts one existing generation UUID/revision-set hash/plan hash, one validated final `RelationIndex`, and explicit absolute-path-to-file-UUID bindings.
+- The transaction locks the generation, requires exact revision identity, `building` state and completed symbol import, then proves that no managed P1-10 symbol edge or include dependency touching the generation already exists. Other independently managed edge families are not claimed or deleted. Incoming file IDs and every endpoint USR must resolve inside that same generation before any graph row is inserted.
+- Seven fixed named parameterized SQL statements perform generation locking, dirty-row counting, file validation, symbol resolution, symbol-edge insertion, include-dependency insertion and final fingerprint completion. Source/destination symbol and file joins independently enforce the generation boundary; short writes fail closed.
+- Writes are bounded to 1,000 rows and 8 MiB JSON per batch. The completion marker is written last in the same caller-provided transaction. Any missing binding, cross-generation/missing endpoint, row-count mismatch or adapter exception aborts all writes; adapter details are reduced to one safe `transaction-failed` class.
+- Canonical payload hashing is input-order independent and replaces absolute paths with persistent file UUIDs. It binds extraction/deduplication/unresolved provenance counts plus the complete accepted occurrence evidence, including columns and confidence, even though the existing database graph schema stores semantic symbol edges at line granularity and include dependencies by file pair.
+- Storage coalescing is explicit and measured: same semantic symbol endpoint/type/file/line occurrences retain the highest confidence, while repeated include occurrences for one source/destination file pair become one dependency. Reports distinguish extracted records, accepted edges, persisted semantic rows, coalesced occurrences and unresolved counts instead of silently claiming every occurrence became a row.
+- Empty accepted relation indexes are fingerprinted without fabricated symbol/file lookups. Completed imports are idempotently reusable only when plan hash, full payload hash and both persisted counts match exactly. Plan/payload/revision drift fails closed.
+- Relation persistence never changes generation status, publishes a generation or marks it ready. P1-14 staging validation and atomic publication remain separate required work.
+
+Verification commands and results:
+
+```powershell
+node --test --test-reporter=spec tests/integration/database-migrations.test.mjs tests/unit/relation-persistence.test.mjs tests/unit/relation-index.test.mjs tests/unit/relation-gold.test.mjs tests/unit/symbol-persistence.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused migration/symbol/relation/gold/persistence coverage passed, including completed and empty imports, order-independent hashing, semantic coalescing, idempotent resume, missing symbol/file bindings, symbol-import prerequisite, dirty generation, short writes, rollback, error redaction and malformed input rejected before opening a transaction.
+- Full repository CI passed 111/111; formatting, security-boundary lint, build, native-aware permissive-license audit and CycloneDX generation with one declared native dependency passed. Release policy passed for `0.1.0`.
+- The destructive live migration rehearsal now targets version 4, statically includes partial relation-marker and relation-before-symbol negative cases, rolls migration 4 back independently to version 3, then continues the existing version-3 rollback/full rollback/re-upgrade sequence.
+- `where.exe psql` returned no executable and `PGDATABASE` is unset. No fake adapter result is represented as live PostgreSQL acceptance.
+
+Known limitations and next work:
+
+- `RelationPersistenceDatabase` is a narrow transactional port, not a fabricated production connection. The approved PostgreSQL driver/pool, service role, TLS policy, statement/transaction timeouts and deployment secret contract remain required before production wiring.
+- Migration SQL, generation locking, constraints and rollback have static/synthetic evidence only until `npm run db:test:live` runs against a disposable PostgreSQL+pgvector database whose name ends in `test`.
+- Exact occurrence columns and repeated include locations remain in checkpoint/gold payloads and their bound hash; the pre-existing Phase 1 database graph intentionally stores line-level symbol evidence and one semantic dependency per file pair. Query evidence policy must preserve this distinction rather than presenting a coalesced graph row as every original occurrence.
+- Named review of the exact relation-gold payload, clean pinned Engine+project accuracy evidence, production target/configuration approval, encrypted SVN policy, formal native license/release review and all global G1 governance items remain explicit blockers. Phase 2 remains frozen.
+
+Next work: treat the dependency-unblocked P1-10 implementation as technically complete but not accepted. Continue with the next unblocked Phase 1 dependency path while scheduling live migration rehearsal and named clean-corpus relation review; do not create another development branch or enter Phase 2.

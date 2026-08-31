@@ -18,6 +18,12 @@
       "name": "p1_09_symbol_persistence",
       "up": "0003_p1_09_symbol_persistence.up.sql",
       "down": "0003_p1_09_symbol_persistence.down.sql"
+    },
+    {
+      "version": 4,
+      "name": "p1_10_relation_persistence",
+      "up": "0004_p1_10_relation_persistence.up.sql",
+      "down": "0004_p1_10_relation_persistence.down.sql"
     }
   ]
 }

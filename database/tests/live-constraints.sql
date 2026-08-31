@@ -54,6 +54,28 @@ BEGIN
   END;
 
   BEGIN
+    UPDATE index_generations
+    SET relation_plan_hash = decode(repeat('44', 32), 'hex')
+    WHERE id = generation_id;
+    RAISE EXCEPTION 'partial relation import state was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE index_generations
+    SET relation_plan_hash = decode(repeat('44', 32), 'hex'),
+        relation_payload_hash = decode(repeat('55', 32), 'hex'),
+        symbol_edge_count = 0,
+        file_dependency_count = 0,
+        relations_imported_at = clock_timestamp()
+    WHERE id = generation_id;
+    RAISE EXCEPTION 'relation import without symbols was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
     INSERT INTO index_generations (
       project_id,
       revision_set_hash,

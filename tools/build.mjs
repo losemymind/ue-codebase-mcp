@@ -14,6 +14,7 @@ await import('../workers/svn-adapter/src/index.ts');
 await import('../workers/windows-agent/src/index.ts');
 await import('../services/index-coordinator/src/workspace.ts');
 await import('../services/index-coordinator/src/symbol-persistence.ts');
+await import('../services/index-coordinator/src/relation-persistence.ts');
 await import('../workers/clang-indexer/src/module-model.ts');
 await import('../workers/clang-indexer/src/compile-database.ts');
 await import('../workers/clang-indexer/src/cursor-batch.ts');
