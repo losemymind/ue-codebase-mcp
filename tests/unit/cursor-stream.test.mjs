@@ -132,6 +132,16 @@ test('cursor invocation is typed, confined, and rejects plugin/output arguments'
   const executable = path.join(toolRoot, 'clang-cursor-indexer.exe');
   const invocation = buildCursorIndexerInvocation({ executable, tool_root: toolRoot, workspace_root: workspace, source_file: source, compile_arguments: ['-x', 'c++', '-std=c++20', '/FI', header] });
   assert.deepEqual(invocation.args.slice(0, 5), ['--source', source, '--workspace-root', workspace, '--']);
+  const relatedRoot = path.resolve('database');
+  const multiRoot = buildCursorIndexerInvocation({
+    executable, tool_root: toolRoot, workspace_root: workspace, related_workspace_roots: [relatedRoot],
+    source_file: source, compile_arguments: ['-x', 'c++'],
+  });
+  assert.deepEqual(multiRoot.args.slice(0, 7), ['--source', source, '--workspace-root', workspace, '--workspace-root', relatedRoot, '--']);
+  assert.throws(() => buildCursorIndexerInvocation({
+    executable, tool_root: toolRoot, workspace_root: workspace, related_workspace_roots: [workspace],
+    source_file: source, compile_arguments: [],
+  }), /unique/);
   assert.throws(() => buildCursorIndexerInvocation({ executable, tool_root: toolRoot, workspace_root: workspace, source_file: source, compile_arguments: ['-fplugin=malicious.dll'] }));
   assert.throws(() => buildCursorIndexerInvocation({ executable, tool_root: toolRoot, workspace_root: workspace, source_file: source, compile_arguments: ['-Xclang', '-load'] }));
   assert.throws(() => buildCursorIndexerInvocation({ executable, tool_root: toolRoot, workspace_root: workspace, source_file: source, compile_arguments: ['-o', 'written.obj'] }));

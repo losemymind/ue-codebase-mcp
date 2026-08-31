@@ -1,0 +1,392 @@
+{
+  "schema_version": 1,
+  "suite_id": "clang-19.1.5-native-relations",
+  "minimum_precision": 0.95,
+  "minimum_recall": 0.95,
+  "symbol_edges": [
+    {
+      "expectation_id": "call-derived-compute-helper",
+      "edge_type": "calls",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:@N@RelationGold@F@Helper#I#",
+      "file": "RelationGold.cpp",
+      "line": 12,
+      "column": 10,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "call-derived-run-helper",
+      "edge_type": "calls",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:@N@RelationGold@F@Helper#I#",
+      "file": "RelationGold.cpp",
+      "line": 16,
+      "column": 27,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "call-derived-run-compute",
+      "edge_type": "calls",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "file": "RelationGold.cpp",
+      "line": 16,
+      "column": 10,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "inherits-derived-base",
+      "edge_type": "inherits",
+      "src_usr": "c:@N@RelationGold@S@Derived",
+      "dst_usr": "c:@N@RelationGold@S@Base",
+      "file": "RelationGold.h",
+      "line": 12,
+      "column": 23,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "override-derived-compute-definition",
+      "edge_type": "overrides",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:@N@RelationGold@S@Base@F@Compute#I#1",
+      "file": "RelationGold.cpp",
+      "line": 11,
+      "column": 1,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "override-derived-compute-declaration",
+      "edge_type": "overrides",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:@N@RelationGold@S@Base@F@Compute#I#1",
+      "file": "RelationGold.h",
+      "line": 14,
+      "column": 3,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-namespace-helper",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold",
+      "dst_usr": "c:@N@RelationGold@F@Helper#I#",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-namespace-base",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold",
+      "dst_usr": "c:@N@RelationGold@S@Base",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-namespace-derived",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold",
+      "dst_usr": "c:@N@RelationGold@S@Derived",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-helper-declaration-parameter",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@F@Helper#I#",
+      "dst_usr": "c:RelationDependency.h@51@N@RelationGold@F@Helper#I#@Value",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-helper-definition-parameter",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@F@Helper#I#",
+      "dst_usr": "c:RelationGold.cpp@52@N@RelationGold@F@Helper#I#@Value",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-base-compute",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Base",
+      "dst_usr": "c:@N@RelationGold@S@Base@F@Compute#I#1",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-base-compute-definition-parameter",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Base@F@Compute#I#1",
+      "dst_usr": "c:RelationGold.cpp@120@N@RelationGold@S@Base@F@Compute#I#1@Value",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-base-compute-declaration-parameter",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Base@F@Compute#I#1",
+      "dst_usr": "c:RelationGold.h@116@N@RelationGold@S@Base@F@Compute#I#1@Value",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-derived-compute",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Derived",
+      "dst_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-derived-run",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Derived",
+      "dst_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-derived-count",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Derived",
+      "dst_usr": "c:@N@RelationGold@S@Derived@FI@Count",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-derived-compute-definition-parameter",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:RelationGold.cpp@193@N@RelationGold@S@Derived@F@Compute#I#1@Value",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-derived-compute-declaration-parameter",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:RelationGold.h@196@N@RelationGold@S@Derived@F@Compute#I#1@Value",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-derived-run-definition-parameter",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:RelationGold.cpp@270@N@RelationGold@S@Derived@F@Run#I#1@Value",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "owns-derived-run-declaration-parameter",
+      "edge_type": "owns",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:RelationGold.h@233@N@RelationGold@S@Derived@F@Run#I#1@Value",
+      "file": null,
+      "line": null,
+      "column": null,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-helper-namespace",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@F@Helper#I#",
+      "dst_usr": "c:@N@RelationGold",
+      "file": "RelationGold.cpp",
+      "line": 3,
+      "column": 5,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-helper-value",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@F@Helper#I#",
+      "dst_usr": "c:RelationGold.cpp@52@N@RelationGold@F@Helper#I#@Value",
+      "file": "RelationGold.cpp",
+      "line": 4,
+      "column": 10,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-base-compute-namespace",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Base@F@Compute#I#1",
+      "dst_usr": "c:@N@RelationGold",
+      "file": "RelationGold.cpp",
+      "line": 7,
+      "column": 5,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-base-compute-base",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Base@F@Compute#I#1",
+      "dst_usr": "c:@N@RelationGold@S@Base",
+      "file": "RelationGold.cpp",
+      "line": 7,
+      "column": 19,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-base-compute-value",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Base@F@Compute#I#1",
+      "dst_usr": "c:RelationGold.cpp@120@N@RelationGold@S@Base@F@Compute#I#1@Value",
+      "file": "RelationGold.cpp",
+      "line": 8,
+      "column": 10,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-compute-namespace",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:@N@RelationGold",
+      "file": "RelationGold.cpp",
+      "line": 11,
+      "column": 5,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-compute-helper",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:@N@RelationGold@F@Helper#I#",
+      "file": "RelationGold.cpp",
+      "line": 12,
+      "column": 10,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-compute-type",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:@N@RelationGold@S@Derived",
+      "file": "RelationGold.cpp",
+      "line": 11,
+      "column": 19,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-compute-value",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "dst_usr": "c:RelationGold.cpp@193@N@RelationGold@S@Derived@F@Compute#I#1@Value",
+      "file": "RelationGold.cpp",
+      "line": 12,
+      "column": 17,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-run-namespace",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:@N@RelationGold",
+      "file": "RelationGold.cpp",
+      "line": 15,
+      "column": 5,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-run-helper",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:@N@RelationGold@F@Helper#I#",
+      "file": "RelationGold.cpp",
+      "line": 16,
+      "column": 27,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-run-type",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:@N@RelationGold@S@Derived",
+      "file": "RelationGold.cpp",
+      "line": 15,
+      "column": 19,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-run-compute",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:@N@RelationGold@S@Derived@F@Compute#I#1",
+      "file": "RelationGold.cpp",
+      "line": 16,
+      "column": 10,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-run-count",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:@N@RelationGold@S@Derived@FI@Count",
+      "file": "RelationGold.cpp",
+      "line": 16,
+      "column": 34,
+      "confidence": 1
+    },
+    {
+      "expectation_id": "reference-derived-run-value",
+      "edge_type": "references",
+      "src_usr": "c:@N@RelationGold@S@Derived@F@Run#I#1",
+      "dst_usr": "c:RelationGold.cpp@270@N@RelationGold@S@Derived@F@Run#I#1@Value",
+      "file": "RelationGold.cpp",
+      "line": 16,
+      "column": 18,
+      "confidence": 1
+    }
+  ],
+  "file_edges": [
+    {
+      "expectation_id": "include-source-header",
+      "edge_type": "include",
+      "src_file": "RelationGold.cpp",
+      "dst_file": "RelationGold.h",
+      "line": 1,
+      "column": 1
+    },
+    {
+      "expectation_id": "include-header-dependency",
+      "edge_type": "include",
+      "src_file": "RelationGold.h",
+      "dst_file": "RelationDependency.h",
+      "line": 3,
+      "column": 1
+    }
+  ],
+  "review": {
+    "status": "pending",
+    "reviewer": null,
+    "approved_at": null,
+    "payload_sha256": null
+  }
+}

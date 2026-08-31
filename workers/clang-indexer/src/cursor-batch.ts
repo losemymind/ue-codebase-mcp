@@ -168,6 +168,7 @@ function planHash(request: CursorBatchRequest, batchSize: number, concurrency: n
       max_output_bytes: request.execution_policy?.max_output_bytes ?? null,
       max_error_diagnostics: request.execution_policy?.max_error_diagnostics ?? null,
     },
+    workspace_roots: request.workspace_roots.map((root) => path.resolve(root)),
     actions: request.commands.map(({ content_hash }) => content_hash),
   })).digest('hex');
 }
@@ -549,6 +550,7 @@ async function executeBatch(
           executable: request.executable,
           tool_root: request.tool_root,
           workspace_root: workspace,
+          related_workspace_roots: roots.filter((root) => root.toLowerCase() !== workspace.toLowerCase()),
           source_file: command.file,
           compile_arguments: [],
           arguments_file: argumentFile,
@@ -586,7 +588,7 @@ export async function runCursorBatch(
   const maxAttempts = request.max_attempts ?? 2;
   if (!BATCH_ID.test(request.batch_id) || !HASH.test(request.revision_set_hash) || !HASH.test(request.tool_artifact_hash)
       || !Array.isArray(request.workspace_roots) || request.workspace_roots.length === 0
-      || request.workspace_roots.some((root) => !path.isAbsolute(root)) || !Array.isArray(request.commands)
+      || request.workspace_roots.length > 64 || request.workspace_roots.some((root) => !path.isAbsolute(root)) || !Array.isArray(request.commands)
       || request.commands.length === 0 || request.commands.length > 1_000_000
       || !Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH_SIZE
       || !Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY
@@ -596,6 +598,7 @@ export async function runCursorBatch(
     throw new CursorBatchError('invalid-plan');
   }
   const roots = request.workspace_roots.map((root) => path.resolve(root));
+  if (new Set(roots.map((root) => root.toLowerCase())).size !== roots.length) throw new CursorBatchError('invalid-plan');
   for (const command of request.commands) validateCommand(command, roots);
   const hash = planHash(request, batchSize, concurrency, maxAttempts);
   const store = await ImmutableCheckpointStore.create(request.state_root, request.checkpoint_directory, roots);

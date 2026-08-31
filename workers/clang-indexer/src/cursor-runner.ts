@@ -67,18 +67,30 @@ function validateInvocation(invocation: CursorIndexerInvocation): void {
       || invocation.args[3] !== invocation.cwd || invocation.args.some((argument) => typeof argument !== 'string' || /[\r\n\0]/.test(argument))) {
     throw new TypeError('cursor invocation is invalid');
   }
-  const fileMode = invocation.args[4] === '--arguments-file';
-  if ((!fileMode && invocation.args[4] !== '--')
-      || (fileMode && (invocation.args.length !== 9 || invocation.args[6] !== '--arguments-root' || invocation.args[8] !== '--'))) {
+  let boundary = 4;
+  const relatedRoots: string[] = [];
+  while (invocation.args[boundary] === '--workspace-root') {
+    if (boundary + 1 >= invocation.args.length) throw new TypeError('cursor invocation is invalid');
+    relatedRoots.push(invocation.args[boundary + 1]);
+    boundary += 2;
+  }
+  const fileMode = invocation.args[boundary] === '--arguments-file';
+  if ((!fileMode && invocation.args[boundary] !== '--')
+      || (fileMode && (invocation.args.length !== boundary + 5
+        || invocation.args[boundary + 2] !== '--arguments-root' || invocation.args[boundary + 4] !== '--'))) {
     throw new TypeError('cursor invocation is invalid');
   }
   const rebuilt = buildCursorIndexerInvocation({
     executable: invocation.executable,
     tool_root: path.dirname(invocation.executable),
     workspace_root: invocation.cwd,
+    related_workspace_roots: relatedRoots,
     source_file: invocation.args[1],
-    compile_arguments: fileMode ? [] : invocation.args.slice(5),
-    ...(fileMode ? { arguments_file: invocation.args[5], arguments_root: invocation.args[7] } : {}),
+    compile_arguments: fileMode ? [] : invocation.args.slice(boundary + 1),
+    ...(fileMode ? {
+      arguments_file: invocation.args[boundary + 1],
+      arguments_root: invocation.args[boundary + 3],
+    } : {}),
   });
   if (JSON.stringify(rebuilt.args) !== JSON.stringify(invocation.args)) throw new TypeError('cursor invocation is invalid');
 }

@@ -6,6 +6,7 @@ export interface CursorIndexerRequest {
   executable: string;
   tool_root: string;
   workspace_root: string;
+  related_workspace_roots?: readonly string[];
   source_file: string;
   compile_arguments: readonly string[];
   arguments_file?: string;
@@ -85,6 +86,14 @@ export function buildCursorIndexerInvocation(request: CursorIndexerRequest): Cur
   const executable = below(request.tool_root, request.executable, 'cursor indexer executable');
   if (path.basename(executable).toLowerCase() !== 'clang-cursor-indexer.exe') throw new TypeError('cursor indexer executable name is invalid');
   const workspace = path.resolve(request.workspace_root);
+  if (request.related_workspace_roots !== undefined && (!Array.isArray(request.related_workspace_roots)
+      || request.related_workspace_roots.length > 63 || request.related_workspace_roots.some((root) => !path.isAbsolute(root)))) {
+    throw new TypeError('cursor indexer roots must be absolute');
+  }
+  const relatedRoots = (request.related_workspace_roots ?? []).map((root) => path.resolve(root));
+  if (new Set([workspace.toLowerCase(), ...relatedRoots.map((root) => root.toLowerCase())]).size !== relatedRoots.length + 1) {
+    throw new TypeError('cursor indexer roots must be unique');
+  }
   const source = below(workspace, request.source_file, 'cursor source file');
   const fileMode = request.arguments_file !== undefined || request.arguments_root !== undefined;
   if ((request.arguments_file === undefined) !== (request.arguments_root === undefined)
@@ -100,14 +109,15 @@ export function buildCursorIndexerInvocation(request: CursorIndexerRequest): Cur
     }
   }
   let args: string[];
+  const rootArguments = relatedRoots.flatMap((root) => ['--workspace-root', root]);
   if (fileMode) {
     if (!path.isAbsolute(request.arguments_root!) || !path.isAbsolute(request.arguments_file!)) throw new TypeError('cursor argument file roots must be absolute');
     const argumentsRoot = path.resolve(request.arguments_root!);
     const argumentsFile = below(argumentsRoot, request.arguments_file!, 'cursor argument file');
     if (path.extname(argumentsFile).toLowerCase() !== '.args') throw new TypeError('cursor argument file name is invalid');
-    args = ['--source', source, '--workspace-root', workspace, '--arguments-file', argumentsFile, '--arguments-root', argumentsRoot, '--'];
+    args = ['--source', source, '--workspace-root', workspace, ...rootArguments, '--arguments-file', argumentsFile, '--arguments-root', argumentsRoot, '--'];
   } else {
-    args = ['--source', source, '--workspace-root', workspace, '--', ...compileArguments];
+    args = ['--source', source, '--workspace-root', workspace, ...rootArguments, '--', ...compileArguments];
   }
   return Object.freeze({
     executable,

@@ -17,7 +17,7 @@ namespace {
 
 struct Options {
   fs::path source;
-  fs::path workspace_root;
+  std::vector<fs::path> workspace_roots;
   std::vector<std::string> clang_arguments;
 };
 
@@ -65,6 +65,10 @@ bool IsBelow(const fs::path& root, const fs::path& value) {
   std::wstring normalized_value = Folded(value);
   if (!normalized_root.ends_with(L'\\')) normalized_root.push_back(L'\\');
   return normalized_value.size() > normalized_root.size() && normalized_value.starts_with(normalized_root);
+}
+
+bool IsBelowAny(const std::vector<fs::path>& roots, const fs::path& value) {
+  return std::any_of(roots.begin(), roots.end(), [&](const fs::path& root) { return IsBelow(root, value); });
 }
 
 bool IsForbiddenArgument(std::string_view value) {
@@ -130,18 +134,34 @@ Options ParseOptions(int argc, char** argv) {
   if (argc < 6 || std::string_view(argv[1]) != "--source" || std::string_view(argv[3]) != "--workspace-root") {
     throw std::runtime_error("invalid arguments");
   }
-  Options options{fs::path(argv[2]), fs::path(argv[4]), {}};
-  if (!options.source.is_absolute() || !options.workspace_root.is_absolute() || !fs::is_regular_file(options.source)
-      || !fs::is_directory(options.workspace_root) || !IsBelow(options.workspace_root, options.source)) {
+  Options options{fs::path(argv[2]), {fs::path(argv[4])}, {}};
+  int index = 5;
+  while (index + 1 < argc && std::string_view(argv[index]) == "--workspace-root") {
+    options.workspace_roots.emplace_back(argv[index + 1]);
+    index += 2;
+  }
+  if (options.workspace_roots.empty() || options.workspace_roots.size() > 64 || !options.source.is_absolute()
+      || !fs::is_regular_file(options.source)) {
     throw std::runtime_error("invalid paths");
   }
-  if (std::string_view(argv[5]) == "--") {
-    options.clang_arguments.reserve(static_cast<std::size_t>(argc - 6));
-    for (int index = 6; index < argc; ++index) options.clang_arguments.emplace_back(argv[index]);
+  std::vector<std::wstring> canonical_roots;
+  canonical_roots.reserve(options.workspace_roots.size());
+  for (const fs::path& root : options.workspace_roots) {
+    if (!root.is_absolute() || !fs::is_directory(root)) throw std::runtime_error("invalid paths");
+    const std::wstring canonical = Folded(root);
+    if (std::find(canonical_roots.begin(), canonical_roots.end(), canonical) != canonical_roots.end()) {
+      throw std::runtime_error("duplicate workspace root");
+    }
+    canonical_roots.push_back(canonical);
+  }
+  if (!IsBelow(options.workspace_roots.front(), options.source)) throw std::runtime_error("invalid paths");
+  if (index < argc && std::string_view(argv[index]) == "--") {
+    options.clang_arguments.reserve(static_cast<std::size_t>(argc - index - 1));
+    for (++index; index < argc; ++index) options.clang_arguments.emplace_back(argv[index]);
     ValidateArguments(options.clang_arguments);
-  } else if (argc == 10 && std::string_view(argv[5]) == "--arguments-file"
-      && std::string_view(argv[7]) == "--arguments-root" && std::string_view(argv[9]) == "--") {
-    options.clang_arguments = ReadArgumentsFile(fs::path(argv[8]), fs::path(argv[6]));
+  } else if (index + 5 == argc && std::string_view(argv[index]) == "--arguments-file"
+      && std::string_view(argv[index + 2]) == "--arguments-root" && std::string_view(argv[index + 4]) == "--") {
+    options.clang_arguments = ReadArgumentsFile(fs::path(argv[index + 3]), fs::path(argv[index + 1]));
   } else {
     throw std::runtime_error("invalid arguments");
   }
@@ -205,25 +225,73 @@ Location SpellingLocation(CXSourceLocation value) {
 }
 
 struct Context {
-  fs::path workspace_root;
+  std::vector<fs::path> workspace_roots;
+  std::string callable_usr;
+  std::string type_usr;
   std::size_t emitted = 0;
   bool overflow = false;
 };
 
+bool ReserveRecord(Context& context) {
+  if (++context.emitted <= 2'000'000) return true;
+  context.overflow = true;
+  return false;
+}
+
+bool IsCallable(CXCursorKind kind) {
+  return kind == CXCursor_FunctionDecl || kind == CXCursor_FunctionTemplate || kind == CXCursor_CXXMethod
+    || kind == CXCursor_Constructor || kind == CXCursor_Destructor;
+}
+
+bool IsTypeDeclaration(CXCursorKind kind) {
+  return kind == CXCursor_ClassDecl || kind == CXCursor_ClassTemplate || kind == CXCursor_StructDecl
+    || kind == CXCursor_UnionDecl;
+}
+
+bool IsReference(CXCursorKind kind) {
+  return clang_isReference(kind) != 0 || kind == CXCursor_DeclRefExpr || kind == CXCursor_MemberRefExpr;
+}
+
+void EmitSymbolEdge(Context& context, std::string_view edge_type, const std::string& source_usr,
+                    const std::string& destination_usr, const Location& location) {
+  if (source_usr.empty() || destination_usr.empty() || source_usr.size() > 4096 || destination_usr.size() > 4096
+      || location.file.empty() || location.file.size() > 4096 || location.line == 0 || location.column == 0
+      || !IsBelowAny(context.workspace_roots, fs::path(location.file)) || !ReserveRecord(context)) return;
+  std::cout << "{\"type\":\"symbol_edge\",\"edge_type\":" << Json(edge_type)
+            << ",\"src_usr\":" << Json(source_usr) << ",\"dst_usr\":" << Json(destination_usr)
+            << ",\"file\":" << Json(location.file) << ",\"line\":" << location.line
+            << ",\"column\":" << location.column << ",\"confidence\":1}\n";
+}
+
+void EmitInclude(Context& context, CXCursor cursor, const Location& location) {
+  const CXFile included = clang_getIncludedFile(cursor);
+  if (included == nullptr || location.file.empty() || location.line == 0 || location.column == 0) return;
+  const std::string destination = TakeString(clang_getFileName(included));
+  if (destination.empty() || destination == location.file || destination.size() > 4096 || location.file.size() > 4096
+      || !IsBelowAny(context.workspace_roots, fs::path(location.file))
+      || !IsBelowAny(context.workspace_roots, fs::path(destination)) || !ReserveRecord(context)) return;
+  std::cout << "{\"type\":\"file_edge\",\"edge_type\":\"include\",\"src_file\":" << Json(location.file)
+            << ",\"dst_file\":" << Json(destination) << ",\"line\":" << location.line
+            << ",\"column\":" << location.column << "}\n";
+}
+
 CXChildVisitResult Visit(CXCursor cursor, CXCursor, CXClientData data) {
   auto& context = *static_cast<Context*>(data);
   const CXCursorKind cursor_kind = clang_getCursorKind(cursor);
+  const std::string previous_callable = context.callable_usr;
+  const std::string previous_type = context.type_usr;
+  const std::string cursor_usr = TakeString(clang_getCursorUSR(cursor));
+  if (IsCallable(cursor_kind) && !cursor_usr.empty()) context.callable_usr = cursor_usr;
+  if (IsTypeDeclaration(cursor_kind) && !cursor_usr.empty()) context.type_usr = cursor_usr;
+  const Location evidence = SpellingLocation(clang_getRangeStart(clang_getCursorExtent(cursor)));
   const std::optional<std::string> kind = Kind(cursor_kind);
   if (kind.has_value()) {
     const CXSourceRange extent = clang_getCursorExtent(cursor);
     const Location start = SpellingLocation(clang_getRangeStart(extent));
     const Location end = SpellingLocation(clang_getRangeEnd(extent));
-    if (!start.file.empty() && start.line > 0 && start.column > 0 && IsBelow(context.workspace_root, fs::path(start.file))) {
-      if (++context.emitted > 2'000'000) {
-        context.overflow = true;
-        return CXChildVisit_Break;
-      }
-      const std::string usr = TakeString(clang_getCursorUSR(cursor));
+    if (!start.file.empty() && start.line > 0 && start.column > 0 && IsBelowAny(context.workspace_roots, fs::path(start.file))) {
+      if (!ReserveRecord(context)) return CXChildVisit_Break;
+      const std::string& usr = cursor_usr;
       const std::string name = TakeString(clang_getCursorSpelling(cursor));
       const std::string display_name = TakeString(clang_getCursorDisplayName(cursor));
       const std::string type = TakeString(clang_getTypeSpelling(clang_getCursorType(cursor)));
@@ -246,7 +314,32 @@ CXChildVisitResult Visit(CXCursor cursor, CXCursor, CXClientData data) {
                 << ",\"documentation\":" << (comment.empty() ? "null" : Json(comment)) << "}\n";
     }
   }
-  return CXChildVisit_Recurse;
+  if (cursor_kind == CXCursor_InclusionDirective) EmitInclude(context, cursor, evidence);
+  if (cursor_kind == CXCursor_CXXBaseSpecifier && !context.type_usr.empty()) {
+    const std::string destination = TakeString(clang_getCursorUSR(clang_getCursorReferenced(cursor)));
+    EmitSymbolEdge(context, "inherits", context.type_usr, destination, evidence);
+  }
+  if (cursor_kind == CXCursor_CXXMethod && !cursor_usr.empty()) {
+    CXCursor* overridden = nullptr;
+    unsigned count = 0;
+    clang_getOverriddenCursors(cursor, &overridden, &count);
+    for (unsigned index = 0; index < count && !context.overflow; ++index) {
+      EmitSymbolEdge(context, "overrides", cursor_usr, TakeString(clang_getCursorUSR(overridden[index])), evidence);
+    }
+    clang_disposeOverriddenCursors(overridden);
+  }
+  if (cursor_kind == CXCursor_CallExpr && !context.callable_usr.empty()) {
+    EmitSymbolEdge(context, "calls", context.callable_usr,
+      TakeString(clang_getCursorUSR(clang_getCursorReferenced(cursor))), evidence);
+  }
+  if (IsReference(cursor_kind) && !context.callable_usr.empty()) {
+    EmitSymbolEdge(context, "references", context.callable_usr,
+      TakeString(clang_getCursorUSR(clang_getCursorReferenced(cursor))), evidence);
+  }
+  if (!context.overflow) clang_visitChildren(cursor, Visit, &context);
+  context.callable_usr = previous_callable;
+  context.type_usr = previous_type;
+  return context.overflow ? CXChildVisit_Break : CXChildVisit_Continue;
 }
 
 }  // namespace
@@ -280,10 +373,10 @@ int main(int argc, char** argv) {
       if (clang_getDiagnosticSeverity(diagnostic) >= CXDiagnostic_Error) ++errors;
       clang_disposeDiagnostic(diagnostic);
     }
-    std::cout << "{\"type\":\"manifest\",\"schema_version\":1,\"libclang\":"
+    std::cout << "{\"type\":\"manifest\",\"schema_version\":2,\"libclang\":"
               << Json(TakeString(clang_getClangVersion())) << ",\"diagnostic_count\":" << diagnostics
               << ",\"error_count\":" << errors << "}\n";
-    Context context{options.workspace_root, 0, false};
+    Context context{options.workspace_roots, "", "", 0, false};
     clang_visitChildren(clang_getTranslationUnitCursor(unit), Visit, &context);
     if (context.overflow) {
       clang_disposeTranslationUnit(unit);

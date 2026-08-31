@@ -716,3 +716,46 @@ Known limitations and next work:
 - All recorded P1-09, clean-revision, encrypted-SVN, production-target-matrix, database, license, reviewer, and global G1 governance blockers remain explicit. Phase 2 remains frozen.
 
 Next work: continue P1-10 from the fixed native emitter and committed relation-gold corpus on the single `codex/phase-1-foundation` development line after repository consolidation. Do not enter Phase 2.
+
+## P1-10 increment — native relation extraction and versioned accuracy gold
+
+Status: native extraction, multi-root protocol invocation, reproducible runtime packaging, synthetic accuracy calibration and real diagnostic-corpus checkpoint replay are technically complete on 2026-08-31. Transactional relation persistence, named UE review and representative clean-revision acceptance remain pending, so P1-10 is not yet accepted.
+
+Deliverables:
+
+- The fixed C++20/libclang executable now emits JSONL protocol version 2. A recursive cursor visitor preserves the enclosing callable and type USRs while extracting `calls`, `references`, `inherits` and `overrides` symbol edges with exact spelling evidence, plus workspace-confined `include` file edges.
+- `include` destinations come from `clang_getIncludedFile`, semantic targets come from `clang_getCursorReferenced`, and override targets come from the bounded `clang_getOverriddenCursors` API. Empty/oversized identities, missing coordinates and files outside configured roots are not emitted.
+- Native output continues to prohibit `owns`. Ownership remains derived only by the trusted aggregate from accepted symbol `owner_usr` values. A single shared two-million-record cap covers symbols and relations and fails with the existing classified record-limit exit instead of silently truncating output.
+- The native CLI and typed Node invocation accept one primary source root plus at most 63 related Engine/project roots. Roots must be absolute, existing and canonically unique; the source must remain below the primary root. Root scope is included in the checkpoint plan hash, so a cross-root policy change cannot reuse stale checkpoints.
+- A committed three-file C++ fixture covers nested includes, inheritance, declaration/definition overrides, calls, ordinary references and structural ownership. Its closed version-1 gold contains all 36 final symbol edges and two include edges observed from the live libclang `19.1.5` capture.
+- The relation-gold parser rejects unknown/missing fields, paths with absolute/platform/parent traversal syntax, duplicate IDs or identities, unsupported types, partial evidence, malformed review records and thresholds below 95%. The evaluator reports precision and recall, fails confidence drift, caps/redacts mismatch diagnostics and never returns an unexpected private USR or path.
+- Review approval is bound to the canonical threshold-and-expectation payload SHA-256 `636a36bc566ab136af05e366bd552bf2f24a26ad2dfcb2a93764c57ba53eaecd`. The committed review remains `pending`; a perfect automated match is technical evidence only and deliberately leaves `acceptance_pass = false`.
+
+Verification commands and results:
+
+```powershell
+node --test --test-reporter=spec tests/unit/clang-cursor-native.test.mjs tests/unit/cursor-stream.test.mjs tests/unit/cursor-runner.test.mjs tests/unit/cursor-batch.test.mjs tests/unit/relation-index.test.mjs tests/unit/relation-gold.test.mjs
+powershell -NoProfile -File tools/build-clang-cursor-indexer.ps1 <fixed toolchain inputs> -OutputFile <repro-a>
+powershell -NoProfile -File tools/build-clang-cursor-indexer.ps1 <fixed toolchain inputs> -OutputFile <repro-b>
+npm run native:package -- <fixed verified inputs for repro-a/package-a>
+npm run native:package -- <fixed verified inputs for repro-b/package-b>
+npm run ci
+npm run release:check
+```
+
+- Focused native/protocol/checkpoint/relation/gold suites passed 28/28. Full repository CI passed 104/104; build, formatting, security-boundary lint, native-aware permissive-license audit and CycloneDX generation with one declared native dependency passed. Release policy passed for `0.1.0`.
+- The packaged executable replayed the committed fixture with zero diagnostics/errors and 16 accepted symbols. Endpoint resolution reported zero unresolved semantic or owner edges; all 38 expected edges matched with precision `1`, recall `1` and no mismatch. Human acceptance correctly remained false.
+- Two independent `/Brepro` builds produced identical executable SHA-256 `57ead11018161e2ac7246486eb07e279e99304ee068a84d3ff5345b200d0a987`. Both complete runtime packages produced artifact hash `7f5cd7ab82ef57ba6c56575c8e99a011940bcf202aa25509af69bd69fef6711e`, retaining the pinned libclang and vendor-notice inputs.
+- The current compile database has changed to SHA-256 `92bb2d47e9461157d2e5c6a579af7cba38cef37625fb6142f133c55370dd82c6` and contains no independent Engine TU, so the old one-per-Engine/project selection failed closed. A replacement diagnostic-only selection used one deterministic HT `Source` action and one HT plugin action while retaining the Engine and project roots for parsing.
+- That modified/partial non-G1 sample completed two actions in 209,911 ms, expanded four response files/69,107 bytes and recorded 70 diagnostics including three errors under the explicit 64-error diagnostic allowance. It produced 66,815 unique symbols, 243,844 source symbol-edge records/229,118 unique edges and 2,644 source include records/2,619 unique edges without reaching the output or record limits.
+- Re-running the exact diagnostic plan restored both protocol-v2 checkpoints in 13,139 ms. Attempt count remained two, checkpoint count remained two and no native action was repeated.
+
+Known limitations and next work:
+
+- The committed relation gold is a complete synthetic extraction fixture, not representative clean Engine+project accuracy evidence. A named UE reviewer must inspect and approve the exact payload; the private production corpus needs separately versioned reviewed expectations before the ≥95% gate can be accepted.
+- `references` intentionally includes callable-scoped namespace, type, declaration and member references and therefore overlaps call sites with `calls`. This live-calibrated semantic contract must be reviewed before it is treated as the final production query policy; automated gold success does not settle that product decision.
+- The real sample is diagnostic evidence only: its working copies are modified/partial, it permits parse errors and its database no longer supplies a balanced Engine TU. It cannot establish clean pinned-revision, production target-matrix, performance or G1 acceptance.
+- Relation persistence remains the next P1-10 implementation step. It must atomically resolve accepted symbol USRs and file bindings against the same building generation, persist `symbol_edges` and `file_dependencies`, fingerprint idempotent imports, roll back partial writes and never publish or mark the generation ready.
+- Formal native license/release review, live PostgreSQL+pgvector rehearsal, encrypted SVN policy, clean revisions, target-matrix approval, named relation-gold review and all global G1 governance items remain explicit blockers. Phase 2 remains frozen.
+
+Next work: implement bounded transactional relation persistence on the existing single `codex/phase-1-foundation` line, then obtain named review and clean representative accuracy evidence. Do not create another development branch or enter Phase 2.
