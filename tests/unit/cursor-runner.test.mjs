@@ -33,6 +33,12 @@ test('cursor runner classifies process failures without exposing stderr', async 
     );
   }
   await assert.rejects(runCursorIndexer(invocation, [workspace], {}, async () => ({ exit_code: 2, stdout: '', stderr_bytes: 9 })), { code: 'nonzero-exit' });
+  for (const [exitCode, code] of [[10, 'input-rejected'], [11, 'initialization-failed'], [12, 'parse-failed'], [13, 'record-limit'], [14, 'output-failed']]) {
+    await assert.rejects(runCursorIndexer(invocation, [workspace], {}, async () => ({ exit_code: exitCode, stdout: '', stderr_bytes: 9 })), { code });
+  }
+  for (const [exitCode, code] of [[21, 'parse-failed'], [22, 'parse-crashed'], [23, 'parse-invalid-arguments'], [24, 'parse-ast-read-error']]) {
+    await assert.rejects(runCursorIndexer(invocation, [workspace], {}, async () => ({ exit_code: exitCode, stdout: '', stderr_bytes: 9 })), { code });
+  }
   await assert.rejects(runCursorIndexer(invocation, [workspace], {}, async () => ({ exit_code: 0, stdout: 'not-json', stderr_bytes: 0 })), { code: 'invalid-output' });
 });
 

@@ -39,6 +39,23 @@ test('compile database normalization fixes paths and extracts includes/macros/fo
   assert.ok(normalized.every(({ content_hash }) => /^[a-f0-9]{64}$/.test(content_hash)));
 });
 
+test('compile database normalization strips every reviewed write-producing output option', () => {
+  const database = JSON.stringify([{
+    directory: workspace,
+    file: engineSource,
+    arguments: [
+      path.join(workspace, 'clang-cl.exe'), '/Fo', 'a.obj', '/Fdb.pdb', '/sourceDependencies:c.json',
+      '-MF', 'deps.d', '-serialize-diagnostic-file=diag.dia', '-fmodules-cache-path', 'module-cache',
+      '-save-temps=obj', '/fp=pch.bin', '/YuSharedPCH.h', '-include-pch', 'cached.pch', engineSource,
+    ],
+  }]);
+  const [normalized] = normalizeCompileDatabase(database, [workspace]);
+  assert.deepEqual(normalized.arguments, [engineSource]);
+  assert.throws(() => normalizeCompileDatabase(JSON.stringify([{
+    directory: workspace, file: engineSource, arguments: [path.join(workspace, 'clang-cl.exe'), '/Fd'],
+  }]), [workspace]), /output argument is missing/);
+});
+
 test('compile database rejects workspace escape, non-Clang compiler, response files, and duplicate TUs', () => {
   const base = { directory: workspace, file: engineSource, arguments: [path.join(workspace, 'clang-cl.exe'), engineSource] };
   assert.throws(() => normalizeCompileDatabase(JSON.stringify([{ ...base, file: path.resolve('outside.cpp') }]), [workspace]));

@@ -67,6 +67,18 @@ const MAX_DATABASE_ENTRIES = 1_000_000;
 const MAX_RESPONSE_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_RESPONSE_FILES = 50_000;
 const MAX_RESPONSE_FILES_TOTAL_BYTES = 192 * 1024 * 1024;
+const SEPARATE_OUTPUT_ARGUMENTS = new Set([
+  '/fo', '-o', '/fe', '/fa', '/fi', '/fm', '/fr', '/fd', '/ifcoutput', '/sourcedependencies', '/module:output',
+  '-mf', '-mj', '-serialize-diagnostic-file', '--serialize-diagnostics', '-fmodules-cache-path', '-fmodule-output',
+  '/fp', '/yc', '/yu', '-include-pch', '-pch-through-header',
+]);
+
+function joinedOutputArgument(argument: string): boolean {
+  return /^(?:\/Fo|\/Fe|\/Fa|\/Fi|\/Fm|\/FR|\/Fd|\/Fp|\/Yc|\/Yu|\/ifcOutput|\/sourceDependencies|\/module:output)(?::|=)?.+/i.test(argument)
+    || /^(?:-MF|-MJ).+/i.test(argument)
+    || /^(?:-serialize-diagnostic-file|--serialize-diagnostics|-fmodules-cache-path|-fmodule-output|-include-pch|-pch-through-header)=.+/i.test(argument)
+    || /^-save-temps(?:=.+)?$/i.test(argument);
+}
 
 function confined(root: string, value: string, name: string): string {
   if (!path.isAbsolute(root) || !path.isAbsolute(value)) throw new TypeError(`${name} must be absolute`);
@@ -257,12 +269,12 @@ export function normalizeCompileDatabase(json: string, workspaceRoots: readonly 
         normalized.push('/D', definition[1]);
         continue;
       }
-      if (/^(?:\/Fo|-o)$/.test(argument)) {
+      if (SEPARATE_OUTPUT_ARGUMENTS.has(argument.toLowerCase())) {
         index += 1;
         if (index >= args.length) throw new TypeError(`compile entry ${entryIndex} output argument is missing`);
         continue;
       }
-      if (/^(?:\/Fo|-o).+/.test(argument)) continue;
+      if (joinedOutputArgument(argument)) continue;
       normalized.push(argument === raw.file || absoluteFrom(directory, argument) === file ? file : argument);
     }
     const stable = { directory, file, compiler, arguments: normalized };

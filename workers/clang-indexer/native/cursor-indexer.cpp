@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cwctype>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -74,10 +75,55 @@ bool IsForbiddenArgument(std::string_view value) {
     || lower == "-o" || lower == "-mf" || lower == "-mj" || lower == "-serialize-diagnostic-file"
     || lower == "--serialize-diagnostics" || lower == "-fmodules-cache-path" || lower.starts_with("-fmodules-cache-path=")
     || lower == "-fmodule-output" || lower.starts_with("-fmodule-output=") || lower.starts_with("-save-temps")
-    || value.starts_with("/Fo") || value.starts_with("/Fe") || value.starts_with("/Fa")
-    || value.starts_with("/Fi") || value.starts_with("/Fm") || value.starts_with("/FR")
-    || value.starts_with("/ifcOutput") || value.starts_with("/sourceDependencies")
-    || value.starts_with("/module:output");
+    || lower == "-include-pch" || lower.starts_with("-include-pch=") || lower == "-pch-through-header"
+    || lower.starts_with("-pch-through-header=") || lower.starts_with("/clang:-include-pch")
+    || lower.starts_with("/fo") || lower.starts_with("/fe") || lower.starts_with("/fa")
+    || value.starts_with("/Fi") || lower.starts_with("/fm") || lower.starts_with("/fr")
+    || lower.starts_with("/fd") || lower.starts_with("/fp") || lower.starts_with("/yc") || lower.starts_with("/yu")
+    || lower.starts_with("/ifcoutput") || lower.starts_with("/sourcedependencies")
+    || lower.starts_with("/module:output");
+}
+
+void ValidateArguments(std::vector<std::string>& arguments) {
+  if (arguments.size() > 16'384) throw std::runtime_error("too many arguments");
+  bool xclang = false;
+  for (const std::string& value : arguments) {
+    std::string lower(value);
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    if (value.empty() || value.size() > 65'536 || value.find_first_of("\r\n\0") != std::string::npos || IsForbiddenArgument(value)
+        || (xclang && (lower == "-load" || lower == "-plugin" || lower == "-add-plugin"
+            || lower == "-fmodules-cache-path" || lower == "-fmodule-output"))) {
+      throw std::runtime_error("forbidden clang argument");
+    }
+    xclang = lower == "-xclang";
+  }
+}
+
+std::vector<std::string> ReadArgumentsFile(const fs::path& root, const fs::path& file) {
+  if (!root.is_absolute() || !file.is_absolute() || !fs::is_directory(root) || !fs::is_regular_file(file) || !IsBelow(root, file)) {
+    throw std::runtime_error("invalid argument file");
+  }
+  std::ifstream input(file, std::ios::binary | std::ios::ate);
+  if (!input) throw std::runtime_error("argument file unavailable");
+  const std::streamsize size = input.tellg();
+  if (size < 1 || size > 8 * 1024 * 1024) throw std::runtime_error("argument file size invalid");
+  input.seekg(0, std::ios::beg);
+  std::string encoded(static_cast<std::size_t>(size), '\0');
+  if (!input.read(encoded.data(), size) || encoded.back() != '\n' || encoded.find('\r') != std::string::npos
+      || encoded.find('\0') != std::string::npos) {
+    throw std::runtime_error("argument file invalid");
+  }
+  std::vector<std::string> arguments;
+  std::size_t start = 0;
+  while (start < encoded.size()) {
+    const std::size_t end = encoded.find('\n', start);
+    if (end == std::string::npos) throw std::runtime_error("argument file invalid");
+    if (end > start) arguments.push_back(encoded.substr(start, end - start));
+    else if (end + 1 != encoded.size()) throw std::runtime_error("argument file invalid");
+    start = end + 1;
+  }
+  ValidateArguments(arguments);
+  return arguments;
 }
 
 Options ParseOptions(int argc, char** argv) {
@@ -86,22 +132,18 @@ Options ParseOptions(int argc, char** argv) {
   }
   Options options{fs::path(argv[2]), fs::path(argv[4]), {}};
   if (!options.source.is_absolute() || !options.workspace_root.is_absolute() || !fs::is_regular_file(options.source)
-      || !fs::is_directory(options.workspace_root) || !IsBelow(options.workspace_root, options.source) || std::string_view(argv[5]) != "--") {
+      || !fs::is_directory(options.workspace_root) || !IsBelow(options.workspace_root, options.source)) {
     throw std::runtime_error("invalid paths");
   }
-  if (argc - 6 > 16'384) throw std::runtime_error("too many arguments");
-  bool xclang = false;
-  for (int index = 6; index < argc; ++index) {
-    std::string value(argv[index]);
-    std::string lower(value);
-    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-    if (value.size() > 65'536 || value.find_first_of("\r\n") != std::string::npos || IsForbiddenArgument(value)
-        || (xclang && (lower == "-load" || lower == "-plugin" || lower == "-add-plugin"
-            || lower == "-fmodules-cache-path" || lower == "-fmodule-output"))) {
-      throw std::runtime_error("forbidden clang argument");
-    }
-    xclang = lower == "-xclang";
-    options.clang_arguments.push_back(std::move(value));
+  if (std::string_view(argv[5]) == "--") {
+    options.clang_arguments.reserve(static_cast<std::size_t>(argc - 6));
+    for (int index = 6; index < argc; ++index) options.clang_arguments.emplace_back(argv[index]);
+    ValidateArguments(options.clang_arguments);
+  } else if (argc == 10 && std::string_view(argv[5]) == "--arguments-file"
+      && std::string_view(argv[7]) == "--arguments-root" && std::string_view(argv[9]) == "--") {
+    options.clang_arguments = ReadArgumentsFile(fs::path(argv[8]), fs::path(argv[6]));
+  } else {
+    throw std::runtime_error("invalid arguments");
   }
   return options;
 }
@@ -132,6 +174,7 @@ std::string QualifiedName(CXCursor cursor) {
   std::vector<std::string> names;
   CXCursor current = cursor;
   while (!clang_Cursor_isNull(current)) {
+    if (clang_getCursorKind(current) == CXCursor_TranslationUnit) break;
     const std::string name = TakeString(clang_getCursorSpelling(current));
     const std::string usr = TakeString(clang_getCursorUSR(current));
     if (!name.empty() && !usr.empty()) names.push_back(name);
@@ -209,20 +252,26 @@ CXChildVisitResult Visit(CXCursor cursor, CXCursor, CXClientData data) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  Options options;
   try {
-    const Options options = ParseOptions(argc, argv);
+    options = ParseOptions(argc, argv);
+  } catch (const std::exception&) {
+    std::cerr << "clang cursor indexer input rejected\n";
+    return 10;
+  }
+  try {
     std::vector<const char*> arguments;
     arguments.reserve(options.clang_arguments.size());
     for (const std::string& argument : options.clang_arguments) arguments.push_back(argument.c_str());
     CXIndex index = clang_createIndex(1, 0);
-    if (index == nullptr) throw std::runtime_error("index creation failed");
+    if (index == nullptr) return 11;
     CXTranslationUnit unit = nullptr;
     const unsigned flags = CXTranslationUnit_DetailedPreprocessingRecord;
     const CXErrorCode error = clang_parseTranslationUnit2(index, options.source.string().c_str(), arguments.data(),
       static_cast<int>(arguments.size()), nullptr, 0, flags, &unit);
     if (error != CXError_Success || unit == nullptr) {
       clang_disposeIndex(index);
-      throw std::runtime_error("translation unit parse failed");
+      return 20 + static_cast<int>(error);
     }
     unsigned diagnostics = clang_getNumDiagnostics(unit);
     unsigned errors = 0;
@@ -239,11 +288,11 @@ int main(int argc, char** argv) {
     if (context.overflow) {
       clang_disposeTranslationUnit(unit);
       clang_disposeIndex(index);
-      throw std::runtime_error("symbol record limit exceeded");
+      return 13;
     }
     clang_disposeTranslationUnit(unit);
     clang_disposeIndex(index);
-    if (!std::cout.good()) throw std::runtime_error("output failed");
+    if (!std::cout.good()) return 14;
     return 0;
   } catch (const std::exception&) {
     std::cerr << "clang cursor indexer failed\n";

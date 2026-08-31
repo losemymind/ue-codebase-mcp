@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { normalizeCompileDatabase } from '../../workers/clang-indexer/src/compile-database.ts';
-import { CursorBatchError, mergeCursorIndexResults, runCursorBatch } from '../../workers/clang-indexer/src/cursor-batch.ts';
+import { createCursorCompileArguments, CursorBatchError, mergeCursorIndexResults, runCursorBatch } from '../../workers/clang-indexer/src/cursor-batch.ts';
 import { CursorIndexerError } from '../../workers/clang-indexer/src/cursor-runner.ts';
 
 const workspace = path.resolve('database/.test-data/cursor-batch-workspace');
@@ -63,9 +63,26 @@ test('cursor batch checkpoints bounded work and resumes without repeating succes
   assert.equal(first.symbols[0].locations.length, 3);
   assert.equal(first.deduplicated_symbol_records, 2);
   assert.equal(calls.length, 3);
+  const argumentFiles = await readdir(path.join(stateRoot, 'arguments'));
+  assert.equal(argumentFiles.length, 1);
+  assert.equal((await readFile(path.join(stateRoot, 'arguments', argumentFiles[0]), 'utf8')).includes('-std=c++20'), true);
   const resumed = await runCursorBatch(request(), async () => { throw new Error('completed action was repeated'); });
   assert.deepEqual(resumed, first);
   assert.equal(JSON.parse(await readFile(path.join(checkpointDirectory, 'checkpoint-000000.json'), 'utf8')).schema_version, 1);
+});
+
+test('UE MSVC cursor argument profile retains preprocessing under a fixed reviewed language baseline', () => {
+  const command = {
+    ...commands()[0],
+    arguments: ['--target=x86_64-pc-windows-msvc', '-Z7', '-fms-compatibility-version=19.38', '-msse4.2', '-mno-constructor-aliases', sourceA],
+    include_paths: [path.join(workspace, 'include')],
+    forced_includes: [path.join(workspace, 'SharedPCH.h')],
+    definitions: ['UE_BUILD=1'],
+  };
+  assert.deepEqual(createCursorCompileArguments(command, 'ue-msvc-cxx20'), [
+    '-x', 'c++', '-std=c++20', '-fms-extensions', '-fms-compatibility',
+    '-I', path.join(workspace, 'include'), '-include', path.join(workspace, 'SharedPCH.h'), '-D', 'UE_BUILD=1',
+  ]);
 });
 
 test('cursor batch retries only classified transient failures and checkpoints only complete batches', async () => {
@@ -84,14 +101,15 @@ test('cursor batch retries only classified transient failures and checkpoints on
   await assert.rejects(runCursorBatch(request(), async (invocation) => {
     if (invocation.args[1] === sourceB) throw new CursorIndexerError('invalid-output');
     return result(invocation.args[1]);
-  }), { code: 'action-failed' });
+  }), { code: 'action-failed', cause_code: 'invalid-output' });
   assert.deepEqual(await readFile(path.join(checkpointDirectory, 'checkpoint-000000.json'), 'utf8').catch(() => undefined), undefined);
 });
 
-test('cursor batch fails closed on plan drift, checkpoint tampering, and cross-TU USR conflicts', async () => {
+test('cursor batch fails closed on plan drift and checkpoint tampering, and drops ambiguous cross-TU USRs', async () => {
   await resetFixture();
   await runCursorBatch(request(), async (invocation) => result(invocation.args[1]));
   await assert.rejects(runCursorBatch(request({ revision_set_hash: '3'.repeat(64) }), async () => result(sourceA)), { code: 'plan-mismatch' });
+  await assert.rejects(runCursorBatch(request({ execution_policy: { timeout_ms: 5_000, max_output_bytes: 4_096, max_error_diagnostics: 1 } }), async () => result(sourceA)), { code: 'plan-mismatch' });
 
   const checkpoint = path.join(checkpointDirectory, 'checkpoint-000000.json');
   const tampered = JSON.parse(await readFile(checkpoint, 'utf8'));
@@ -99,10 +117,12 @@ test('cursor batch fails closed on plan drift, checkpoint tampering, and cross-T
   await writeFile(checkpoint, `${JSON.stringify(tampered)}\n`, 'utf8');
   await assert.rejects(runCursorBatch(request(), async () => result(sourceA)), { code: 'invalid-checkpoint' });
 
-  assert.throws(() => mergeCursorIndexResults([
+  const ambiguous = mergeCursorIndexResults([
     result(sourceA),
     { ...result(sourceB), symbols: [symbol(sourceB, { qualified_name: 'Conflicting' })] },
-  ]), (error) => error instanceof CursorBatchError && error.code === 'symbol-conflict');
+  ]);
+  assert.equal(ambiguous.symbols.length, 0);
+  assert.equal(ambiguous.unidentified_count, 2);
 });
 
 test('cursor batch never executes the compile database compiler and rejects forged normalized actions', async () => {

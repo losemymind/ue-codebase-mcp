@@ -7,6 +7,8 @@ export interface CursorIndexerRequest {
   workspace_root: string;
   source_file: string;
   compile_arguments: readonly string[];
+  arguments_file?: string;
+  arguments_root?: string;
 }
 
 export interface CursorIndexerInvocation {
@@ -64,9 +66,12 @@ function below(root: string, value: string, name: string): string {
 function forbiddenArgument(argument: string, previous: string | undefined): boolean {
   const value = argument.toLowerCase();
   return ['-load', '-plugin', '-add-plugin', '-fplugin', '-o', '-mf', '-mj', '-serialize-diagnostic-file', '--serialize-diagnostics', '-fmodules-cache-path', '-fmodule-output'].includes(value)
+    || ['-include-pch', '-pch-through-header'].includes(value)
     || value.startsWith('-fplugin=') || value.startsWith('-fpass-plugin=') || value.startsWith('/clang:-load')
     || value.startsWith('-fmodules-cache-path=') || value.startsWith('-fmodule-output=') || value.startsWith('-save-temps')
-    || /^(?:\/Fo|\/Fe|\/Fa|\/Fi|\/Fm|\/FR|\/ifcOutput|\/sourceDependencies|\/module:output)/.test(argument)
+    || /^(?:\/Fo|\/Fe|\/Fa|\/Fm|\/FR|\/Fd|\/Fp|\/Yc|\/Yu|\/ifcOutput|\/sourceDependencies|\/module:output)/i.test(argument)
+    || argument.startsWith('/Fi')
+    || value.startsWith('/clang:-include-pch')
     || (previous?.toLowerCase() === '-xclang' && ['-load', '-plugin', '-add-plugin', '-fmodules-cache-path', '-fmodule-output'].includes(value));
 }
 
@@ -76,18 +81,33 @@ export function buildCursorIndexerInvocation(request: CursorIndexerRequest): Cur
   if (path.basename(executable).toLowerCase() !== 'clang-cursor-indexer.exe') throw new TypeError('cursor indexer executable name is invalid');
   const workspace = path.resolve(request.workspace_root);
   const source = below(workspace, request.source_file, 'cursor source file');
-  if (!/\.(?:c|cc|cpp|cxx|m|mm)$/i.test(source) || !Array.isArray(request.compile_arguments) || request.compile_arguments.length > 16_384) throw new TypeError('cursor indexer request is invalid');
+  const fileMode = request.arguments_file !== undefined || request.arguments_root !== undefined;
+  if ((request.arguments_file === undefined) !== (request.arguments_root === undefined)
+      || !/\.(?:c|cc|cpp|cxx|m|mm)$/i.test(source) || !Array.isArray(request.compile_arguments)
+      || request.compile_arguments.length > 16_384 || (fileMode && request.compile_arguments.length !== 0)) {
+    throw new TypeError('cursor indexer request is invalid');
+  }
   const compileArguments = [...request.compile_arguments];
   for (let index = 0; index < compileArguments.length; index += 1) {
     const argument = compileArguments[index];
-    if (typeof argument !== 'string' || argument.length > 65_536 || /[\r\n\0]/.test(argument) || forbiddenArgument(argument, compileArguments[index - 1])) {
+    if (typeof argument !== 'string' || argument.length === 0 || argument.length > 65_536 || /[\r\n\0]/.test(argument) || forbiddenArgument(argument, compileArguments[index - 1])) {
       throw new TypeError('cursor compile argument is forbidden');
     }
+  }
+  let args: string[];
+  if (fileMode) {
+    if (!path.isAbsolute(request.arguments_root!) || !path.isAbsolute(request.arguments_file!)) throw new TypeError('cursor argument file roots must be absolute');
+    const argumentsRoot = path.resolve(request.arguments_root!);
+    const argumentsFile = below(argumentsRoot, request.arguments_file!, 'cursor argument file');
+    if (path.extname(argumentsFile).toLowerCase() !== '.args') throw new TypeError('cursor argument file name is invalid');
+    args = ['--source', source, '--workspace-root', workspace, '--arguments-file', argumentsFile, '--arguments-root', argumentsRoot, '--'];
+  } else {
+    args = ['--source', source, '--workspace-root', workspace, '--', ...compileArguments];
   }
   return Object.freeze({
     executable,
     cwd: workspace,
-    args: Object.freeze(['--source', source, '--workspace-root', workspace, '--', ...compileArguments]),
+    args: Object.freeze(args),
   });
 }
 
@@ -111,8 +131,13 @@ function count(value: unknown, name: string): number {
 }
 
 function documentation(value: string): string | undefined {
-  const normalized = value.split(/\r?\n/).map((line) => line.replace(/^\s*(?:\/\/\/?|\/\*\*?|\*)\s?/, '').replace(/\*\/$/, '').trimEnd()).join('\n').trim();
+  const normalized = value.split(/\r?\n/).map((line) => line.replace(/\*\/\s*$/, '').replace(/^\s*(?:\/\/\/?|\/\*\*?|\*)\s?/, '').trimEnd()).join('\n').trim();
   return normalized || undefined;
+}
+
+function documentationText(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 1024 * 1024 || value.includes('\0')) throw new TypeError('cursor documentation is invalid');
+  return value;
 }
 
 export function parseCursorIndexerJsonLines(output: string, workspaceRoots: readonly string[]): CursorIndexResult {
@@ -123,6 +148,8 @@ export function parseCursorIndexerJsonLines(output: string, workspaceRoots: read
   let manifest: Record<string, unknown> | undefined;
   const symbols = new Map<string, CursorSymbol>();
   const locationKeys = new Map<string, Set<string>>();
+  const symbolRecordCounts = new Map<string, number>();
+  const ambiguousUsrs = new Set<string>();
   let unidentified = 0;
   for (let index = 0; index < lines.length; index += 1) {
     let parsed: unknown;
@@ -145,11 +172,13 @@ export function parseCursorIndexerJsonLines(output: string, workspaceRoots: read
     const name = string(value.name, 'cursor name', true);
     const displayName = string(value.display_name, 'cursor display name', true);
     const qualifiedName = string(value.qualified_name, 'cursor qualified name', true);
-    if (qualifiedName && (path.isAbsolute(qualifiedName) || /[\\/]/.test(qualifiedName))) throw new TypeError('cursor qualified name is invalid');
+    const qualifiedNameWithoutDivisionOperators = qualifiedName.replace(/operator\/(?:=)?/g, 'operator');
+    const qualifiedNameIsPathLike = qualifiedName !== ''
+      && (path.isAbsolute(qualifiedName) || qualifiedName.includes('\\') || qualifiedNameWithoutDivisionOperators.includes('/'));
     const ownerUsr = value.owner_usr === null ? undefined : string(value.owner_usr, 'cursor owner USR');
     const typeSpelling = string(value.type_spelling, 'cursor type', true);
     const resultType = string(value.result_type, 'cursor result type', true);
-    const comment = value.documentation === null ? undefined : documentation(string(value.documentation, 'cursor documentation'));
+    const comment = value.documentation === null ? undefined : documentation(documentationText(value.documentation));
     const fileValue = string(value.file, 'cursor file');
     const file = roots.map((root) => { try { return below(root, fileValue, 'cursor file'); } catch { return undefined; } }).find((candidate) => candidate !== undefined);
     if (file === undefined) throw new TypeError('cursor file escapes configured workspaces');
@@ -157,14 +186,26 @@ export function parseCursorIndexerJsonLines(output: string, workspaceRoots: read
     const startColumn = count(value.start_column, 'cursor start column');
     const endLine = count(value.end_line, 'cursor end line');
     const endColumn = count(value.end_column, 'cursor end column');
-    if (startLine < 1 || startColumn < 1 || endLine < startLine || (endLine === startLine && endColumn < startColumn)) throw new TypeError('cursor source range is invalid');
-    if (usr === undefined || !name || !displayName || !qualifiedName) { unidentified += 1; continue; }
+    const rangeIsUsable = startLine >= 1 && startColumn >= 1 && endLine >= startLine
+      && (endLine !== startLine || endColumn >= startColumn);
+    if (usr === undefined || !name || !displayName || !qualifiedName || qualifiedNameIsPathLike || !rangeIsUsable) { unidentified += 1; continue; }
+    if (ambiguousUsrs.has(usr)) { unidentified += 1; continue; }
     const location: CursorLocation = Object.freeze({ kind: kind === 'macro' || value.is_definition ? 'definition' : 'declaration', file, start_line: startLine, start_column: startColumn, end_line: endLine, end_column: endColumn });
-    const signature = JSON.stringify({ kind, qualified_name: qualifiedName, display_name: displayName, type_spelling: typeSpelling, result_type: resultType });
     const existing = symbols.get(usr);
-    if (existing !== undefined && (existing.kind !== kind || existing.name !== name || existing.qualified_name !== qualifiedName || existing.display_name !== displayName || existing.owner_usr !== ownerUsr || existing.type_spelling !== typeSpelling || existing.result_type !== resultType)) {
-      throw new TypeError('cursor USR has conflicting symbol data');
+    if (existing !== undefined && (existing.kind !== kind || existing.name !== name || existing.qualified_name !== qualifiedName
+        || existing.display_name !== displayName || existing.owner_usr !== ownerUsr
+        || (existing.type_spelling && typeSpelling && existing.type_spelling !== typeSpelling)
+        || (existing.result_type && resultType && existing.result_type !== resultType))) {
+      unidentified += (symbolRecordCounts.get(usr) ?? 0) + 1;
+      symbols.delete(usr);
+      locationKeys.delete(usr);
+      symbolRecordCounts.delete(usr);
+      ambiguousUsrs.add(usr);
+      continue;
     }
+    const selectedTypeSpelling = existing?.type_spelling || typeSpelling;
+    const selectedResultType = existing?.result_type || resultType;
+    const signature = JSON.stringify({ kind, qualified_name: qualifiedName, display_name: displayName, type_spelling: selectedTypeSpelling, result_type: selectedResultType });
     const key = JSON.stringify(location);
     const keys = locationKeys.get(usr) ?? new Set<string>();
     if (!keys.has(key)) keys.add(key);
@@ -174,10 +215,11 @@ export function parseCursorIndexerJsonLines(output: string, workspaceRoots: read
     const bestDocumentation = [existing?.documentation, comment].filter((candidate): candidate is string => candidate !== undefined).sort((left, right) => right.length - left.length)[0];
     symbols.set(usr, Object.freeze({
       stable_usr: usr, qualified_name: qualifiedName, name, display_name: displayName, kind,
-      ...(ownerUsr === undefined ? {} : { owner_usr: ownerUsr }), type_spelling: typeSpelling, result_type: resultType,
+      ...(ownerUsr === undefined ? {} : { owner_usr: ownerUsr }), type_spelling: selectedTypeSpelling, result_type: selectedResultType,
       ...(bestDocumentation === undefined ? {} : { documentation: bestDocumentation }),
       signature_hash: createHash('sha256').update(signature).digest('hex'), locations: Object.freeze(locations),
     }));
+    symbolRecordCounts.set(usr, (symbolRecordCounts.get(usr) ?? 0) + 1);
   }
   if (manifest === undefined) throw new TypeError('cursor manifest is missing');
   return Object.freeze({

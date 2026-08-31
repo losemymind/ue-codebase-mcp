@@ -20,5 +20,8 @@ test('native cursor boundary rejects executable clang extensions and write-produ
   }
   assert.match(nativeSource, /IsBelow\(options\.workspace_root, options\.source\)/);
   assert.match(nativeSource, /context\.overflow/);
+  assert.match(nativeSource, /ReadArgumentsFile/);
+  assert.match(nativeSource, /8 \* 1024 \* 1024/);
+  assert.match(nativeSource, /clang_getCursorKind\(current\) == CXCursor_TranslationUnit/);
   assert.doesNotMatch(nativeSource, /system\s*\(|CreateProcess|ShellExecute|WinExec/);
 });

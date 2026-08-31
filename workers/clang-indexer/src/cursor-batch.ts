@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, readdir, realpath, rename } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, readdir, realpath, rename } from 'node:fs/promises';
 import path from 'node:path';
 import type { NormalizedCompileCommand } from './compile-database.ts';
-import { CursorIndexerError, runCursorIndexer, type CursorExecutionPolicy } from './cursor-runner.ts';
+import { CursorIndexerError, runCursorIndexer, type CursorExecutionPolicy, type CursorIndexerErrorCode } from './cursor-runner.ts';
 import {
   buildCursorIndexerInvocation,
   type CursorIndexerInvocation,
@@ -20,11 +20,13 @@ export type CursorBatchErrorCode =
 
 export class CursorBatchError extends Error {
   readonly code: CursorBatchErrorCode;
+  readonly cause_code?: CursorIndexerErrorCode | 'invalid-action' | 'invalid-invocation' | 'invalid-policy' | 'forbidden-compile-argument' | 'invalid-source';
 
-  constructor(code: CursorBatchErrorCode) {
+  constructor(code: CursorBatchErrorCode, causeCode?: CursorIndexerErrorCode | 'invalid-action' | 'invalid-invocation' | 'invalid-policy' | 'forbidden-compile-argument' | 'invalid-source') {
     super(`cursor batch ${code}`);
     this.name = 'CursorBatchError';
     this.code = code;
+    this.cause_code = causeCode;
   }
 }
 
@@ -38,6 +40,7 @@ export interface CursorBatchRequest {
   tool_root: string;
   workspace_roots: readonly string[];
   commands: readonly NormalizedCompileCommand[];
+  argument_profile?: 'normalized' | 'ue-msvc-cxx20';
   batch_size?: number;
   concurrency?: number;
   max_attempts?: number;
@@ -90,6 +93,8 @@ const MAX_CHECKPOINT_BYTES = 512 * 1024 * 1024;
 const MAX_BATCH_SIZE = 64;
 const MAX_CONCURRENCY = 8;
 const MAX_ATTEMPTS = 3;
+const MAX_ARGUMENT_FILE_BYTES = 8 * 1024 * 1024;
+const argumentFileWrites = new Map<string, Promise<string>>();
 
 function exactKeys(value: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []): void {
   const allowed = new Set([...required, ...optional]);
@@ -141,13 +146,21 @@ function validateCommand(command: NormalizedCompileCommand, roots: readonly stri
   }
 }
 
-function planHash(request: CursorBatchRequest, batchSize: number): string {
+function planHash(request: CursorBatchRequest, batchSize: number, concurrency: number, maxAttempts: number): string {
   return createHash('sha256').update(JSON.stringify({
     schema_version: 1,
     revision_set_hash: request.revision_set_hash,
     tool_artifact_hash: request.tool_artifact_hash,
     executable: path.resolve(request.executable),
+    argument_profile: request.argument_profile ?? 'normalized',
     batch_size: batchSize,
+    concurrency,
+    max_attempts: maxAttempts,
+    execution_policy: {
+      timeout_ms: request.execution_policy?.timeout_ms ?? null,
+      max_output_bytes: request.execution_policy?.max_output_bytes ?? null,
+      max_error_diagnostics: request.execution_policy?.max_error_diagnostics ?? null,
+    },
     actions: request.commands.map(({ content_hash }) => content_hash),
   })).digest('hex');
 }
@@ -165,10 +178,13 @@ function compareLocations(left: CursorLocation, right: CursorLocation): number {
 function mergeSymbol(existing: CursorSymbol | undefined, incoming: CursorSymbol): CursorSymbol {
   if (existing !== undefined && (existing.qualified_name !== incoming.qualified_name || existing.name !== incoming.name
       || existing.display_name !== incoming.display_name || existing.kind !== incoming.kind
-      || existing.owner_usr !== incoming.owner_usr || existing.type_spelling !== incoming.type_spelling
-      || existing.result_type !== incoming.result_type || existing.signature_hash !== incoming.signature_hash)) {
+      || existing.owner_usr !== incoming.owner_usr
+      || (existing.type_spelling && incoming.type_spelling && existing.type_spelling !== incoming.type_spelling)
+      || (existing.result_type && incoming.result_type && existing.result_type !== incoming.result_type))) {
     throw new CursorBatchError('symbol-conflict');
   }
+  const typeSpelling = existing?.type_spelling || incoming.type_spelling;
+  const resultType = existing?.result_type || incoming.result_type;
   const locations = new Map<string, CursorLocation>();
   for (const location of [...(existing?.locations ?? []), ...incoming.locations]) locations.set(locationKey(location), location);
   const documentation = [existing?.documentation, incoming.documentation]
@@ -181,10 +197,16 @@ function mergeSymbol(existing: CursorSymbol | undefined, incoming: CursorSymbol)
     display_name: incoming.display_name,
     kind: incoming.kind,
     ...(incoming.owner_usr === undefined ? {} : { owner_usr: incoming.owner_usr }),
-    type_spelling: incoming.type_spelling,
-    result_type: incoming.result_type,
+    type_spelling: typeSpelling,
+    result_type: resultType,
     ...(documentation === undefined ? {} : { documentation }),
-    signature_hash: incoming.signature_hash,
+    signature_hash: createHash('sha256').update(JSON.stringify({
+      kind: incoming.kind,
+      qualified_name: incoming.qualified_name,
+      display_name: incoming.display_name,
+      type_spelling: typeSpelling,
+      result_type: resultType,
+    })).digest('hex'),
     locations: Object.freeze([...locations.values()].sort(compareLocations)),
   });
 }
@@ -193,6 +215,7 @@ export function mergeCursorIndexResults(results: readonly CursorIndexResult[]): 
   if (!Array.isArray(results) || results.length === 0) throw new CursorBatchError('invalid-plan');
   const libclang = results[0].libclang;
   const symbols = new Map<string, CursorSymbol>();
+  const ambiguousUsrs = new Set<string>();
   let diagnosticCount = 0;
   let errorCount = 0;
   let unidentifiedCount = 0;
@@ -202,7 +225,21 @@ export function mergeCursorIndexResults(results: readonly CursorIndexResult[]): 
     errorCount += result.error_count;
     unidentifiedCount += result.unidentified_count;
     if (![diagnosticCount, errorCount, unidentifiedCount].every(Number.isSafeInteger)) throw new CursorBatchError('symbol-conflict');
-    for (const symbol of result.symbols) symbols.set(symbol.stable_usr, mergeSymbol(symbols.get(symbol.stable_usr), symbol));
+    for (const symbol of result.symbols) {
+      if (ambiguousUsrs.has(symbol.stable_usr)) {
+        unidentifiedCount += symbol.locations.length;
+        continue;
+      }
+      const existing = symbols.get(symbol.stable_usr);
+      try {
+        symbols.set(symbol.stable_usr, mergeSymbol(existing, symbol));
+      } catch (error) {
+        if (!(error instanceof CursorBatchError) || error.code !== 'symbol-conflict' || existing === undefined) throw error;
+        unidentifiedCount += existing.locations.length + symbol.locations.length;
+        symbols.delete(symbol.stable_usr);
+        ambiguousUsrs.add(symbol.stable_usr);
+      }
+    }
   }
   return Object.freeze({
     schema_version: 1,
@@ -356,13 +393,83 @@ function workspaceFor(file: string, roots: readonly string[]): string {
   return candidates[0];
 }
 
-function compileArguments(command: NormalizedCompileCommand): string[] {
+export function createCursorCompileArguments(
+  command: NormalizedCompileCommand,
+  profile: 'normalized' | 'ue-msvc-cxx20' = 'normalized',
+): string[] {
   const source = path.resolve(command.file).toLowerCase();
-  return command.arguments.filter((argument) => !(path.isAbsolute(argument) && path.resolve(argument).toLowerCase() === source));
+  if (profile === 'normalized') {
+    return command.arguments.filter((argument) => !(path.isAbsolute(argument) && path.resolve(argument).toLowerCase() === source));
+  }
+  if (profile !== 'ue-msvc-cxx20') throw new CursorBatchError('invalid-plan');
+  return [
+    '-x', 'c++', '-std=c++20', '-fms-extensions', '-fms-compatibility',
+    ...command.include_paths.flatMap((value) => ['-I', value]),
+    ...command.forced_includes.flatMap((value) => ['-include', value]),
+    ...command.definitions.flatMap((value) => ['-D', value]),
+  ];
+}
+
+async function ensureArgumentFile(
+  stateRoot: string,
+  command: NormalizedCompileCommand,
+  profile: 'normalized' | 'ue-msvc-cxx20',
+): Promise<string> {
+  const argumentsValue = createCursorCompileArguments(command, profile);
+  if (argumentsValue.some((argument) => argument.length === 0 || /[\r\n\0]/.test(argument))) throw new CursorBatchError('invalid-plan');
+  const encoded = `${argumentsValue.join('\n')}\n`;
+  if (Buffer.byteLength(encoded, 'utf8') > MAX_ARGUMENT_FILE_BYTES) throw new CursorBatchError('invalid-plan');
+  const contentHash = createHash('sha256').update(encoded).digest('hex');
+  const writeKey = `${path.resolve(stateRoot)}\0${contentHash}`;
+  const pending = argumentFileWrites.get(writeKey);
+  if (pending !== undefined) return pending;
+  const operation = writeArgumentFile(stateRoot, contentHash, encoded);
+  argumentFileWrites.set(writeKey, operation);
+  try {
+    return await operation;
+  } finally {
+    if (argumentFileWrites.get(writeKey) === operation) argumentFileWrites.delete(writeKey);
+  }
+}
+
+async function writeArgumentFile(stateRoot: string, contentHash: string, encoded: string): Promise<string> {
+  const directory = path.join(stateRoot, 'arguments');
+  await mkdir(directory, { recursive: true });
+  const canonicalDirectory = await realpath(directory).catch(() => { throw new CursorBatchError('invalid-checkpoint'); });
+  if (!isBelow(stateRoot, canonicalDirectory)) throw new CursorBatchError('invalid-checkpoint');
+  const target = path.join(canonicalDirectory, `${contentHash}.args`);
+  const metadata = await lstat(target).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return undefined;
+    throw new CursorBatchError('invalid-checkpoint');
+  });
+  if (metadata !== undefined) {
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > MAX_ARGUMENT_FILE_BYTES
+        || await readFile(target, 'utf8') !== encoded) throw new CursorBatchError('invalid-checkpoint');
+    return target;
+  }
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  const handle = await open(temporary, 'wx');
+  try {
+    await handle.writeFile(encoded, 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try { await rename(temporary, target); } catch { throw new CursorBatchError('invalid-checkpoint'); }
+  return target;
 }
 
 function retryable(error: unknown): boolean {
   return error instanceof CursorIndexerError && ['start-failed', 'timeout', 'nonzero-exit'].includes(error.code);
+}
+
+function safeFailureCause(error: unknown): CursorIndexerErrorCode | 'invalid-action' | 'invalid-invocation' | 'invalid-policy' | 'forbidden-compile-argument' | 'invalid-source' {
+  if (error instanceof CursorIndexerError) return error.code;
+  if (error instanceof TypeError && error.message === 'cursor invocation is invalid') return 'invalid-invocation';
+  if (error instanceof TypeError && error.message === 'cursor execution policy is invalid') return 'invalid-policy';
+  if (error instanceof TypeError && error.message === 'cursor compile argument is forbidden') return 'forbidden-compile-argument';
+  if (error instanceof TypeError && (error.message === 'cursor indexer request is invalid' || error.message.includes('cursor source file'))) return 'invalid-source';
+  return 'invalid-action';
 }
 
 async function executeBatch(
@@ -372,6 +479,7 @@ async function executeBatch(
   end: number,
   concurrency: number,
   maxAttempts: number,
+  stateRoot: string,
   executor: CursorBatchActionExecutor,
 ): Promise<{ results: CursorIndexResult[]; attempts: number }> {
   const results = new Array<CursorIndexResult>(end - start);
@@ -384,14 +492,23 @@ async function executeBatch(
       cursor += 1;
       if (actionIndex >= end) return;
       const command = request.commands[actionIndex];
-      const workspace = workspaceFor(command.file, roots);
-      const invocation = buildCursorIndexerInvocation({
-        executable: request.executable,
-        tool_root: request.tool_root,
-        workspace_root: workspace,
-        source_file: command.file,
-        compile_arguments: compileArguments(command),
-      });
+      let invocation: CursorIndexerInvocation;
+      try {
+        const workspace = workspaceFor(command.file, roots);
+        const argumentFile = await ensureArgumentFile(stateRoot, command, request.argument_profile ?? 'normalized');
+        invocation = buildCursorIndexerInvocation({
+          executable: request.executable,
+          tool_root: request.tool_root,
+          workspace_root: workspace,
+          source_file: command.file,
+          compile_arguments: [],
+          arguments_file: argumentFile,
+          arguments_root: path.dirname(argumentFile),
+        });
+      } catch (error) {
+        failure = error;
+        return;
+      }
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         attempts += 1;
         try {
@@ -406,7 +523,7 @@ async function executeBatch(
   await Promise.all(workers);
   if (failure !== undefined) {
     if (failure instanceof CursorIndexerError && failure.code === 'aborted') throw failure;
-    throw new CursorBatchError('action-failed');
+    throw new CursorBatchError('action-failed', safeFailureCause(failure));
   }
   return { results, attempts };
 }
@@ -425,13 +542,15 @@ export async function runCursorBatch(
       || !Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH_SIZE
       || !Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY
       || !Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > MAX_ATTEMPTS
+      || !['normalized', 'ue-msvc-cxx20'].includes(request.argument_profile ?? 'normalized')
       || Math.ceil(request.commands.length / batchSize) > MAX_CHECKPOINT_FILES) {
     throw new CursorBatchError('invalid-plan');
   }
   const roots = request.workspace_roots.map((root) => path.resolve(root));
   for (const command of request.commands) validateCommand(command, roots);
-  const hash = planHash(request, batchSize);
+  const hash = planHash(request, batchSize, concurrency, maxAttempts);
   const store = await ImmutableCheckpointStore.create(request.state_root, request.checkpoint_directory, roots);
+  const canonicalStateRoot = await realpath(request.state_root).catch(() => { throw new CursorBatchError('invalid-plan'); });
   const checkpoints = await store.load();
   const aggregates: CursorIndexResult[] = [];
   let completed = 0;
@@ -456,7 +575,7 @@ export async function runCursorBatch(
   while (completed < request.commands.length) {
     const start = completed;
     const end = Math.min(start + batchSize, request.commands.length);
-    const execution = await executeBatch(request, roots, start, end, concurrency, maxAttempts, executor);
+    const execution = await executeBatch(request, roots, start, end, concurrency, maxAttempts, canonicalStateRoot, executor);
     const aggregate = mergeCursorIndexResults(execution.results);
     const batchSymbols = execution.results.reduce((total, result) => total + result.symbols.length, 0);
     const batchLocations = execution.results.reduce((total, result) => total + result.symbols.reduce((count, symbol) => count + symbol.locations.length, 0), 0);

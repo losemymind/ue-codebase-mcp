@@ -2,7 +2,22 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { buildCursorIndexerInvocation, parseCursorIndexerJsonLines, type CursorIndexerInvocation, type CursorIndexResult } from './cursor-stream.ts';
 
-export type CursorIndexerErrorCode = 'start-failed' | 'timeout' | 'aborted' | 'output-limit' | 'nonzero-exit' | 'invalid-output' | 'diagnostic-errors';
+export type CursorIndexerErrorCode =
+  | 'start-failed'
+  | 'timeout'
+  | 'aborted'
+  | 'output-limit'
+  | 'nonzero-exit'
+  | 'input-rejected'
+  | 'initialization-failed'
+  | 'parse-failed'
+  | 'parse-crashed'
+  | 'parse-invalid-arguments'
+  | 'parse-ast-read-error'
+  | 'record-limit'
+  | 'output-failed'
+  | 'invalid-output'
+  | 'diagnostic-errors';
 
 export class CursorIndexerError extends Error {
   readonly code: CursorIndexerErrorCode;
@@ -48,8 +63,13 @@ function safeEnvironment(): NodeJS.ProcessEnv {
 function validateInvocation(invocation: CursorIndexerInvocation): void {
   if (!path.isAbsolute(invocation.executable) || path.basename(invocation.executable).toLowerCase() !== 'clang-cursor-indexer.exe'
       || !path.isAbsolute(invocation.cwd) || !Array.isArray(invocation.args) || invocation.args.length < 5
-      || invocation.args[0] !== '--source' || invocation.args[2] !== '--workspace-root' || invocation.args[4] !== '--'
+      || invocation.args[0] !== '--source' || invocation.args[2] !== '--workspace-root'
       || invocation.args[3] !== invocation.cwd || invocation.args.some((argument) => typeof argument !== 'string' || /[\r\n\0]/.test(argument))) {
+    throw new TypeError('cursor invocation is invalid');
+  }
+  const fileMode = invocation.args[4] === '--arguments-file';
+  if ((!fileMode && invocation.args[4] !== '--')
+      || (fileMode && (invocation.args.length !== 9 || invocation.args[6] !== '--arguments-root' || invocation.args[8] !== '--'))) {
     throw new TypeError('cursor invocation is invalid');
   }
   const rebuilt = buildCursorIndexerInvocation({
@@ -57,7 +77,8 @@ function validateInvocation(invocation: CursorIndexerInvocation): void {
     tool_root: path.dirname(invocation.executable),
     workspace_root: invocation.cwd,
     source_file: invocation.args[1],
-    compile_arguments: invocation.args.slice(5),
+    compile_arguments: fileMode ? [] : invocation.args.slice(5),
+    ...(fileMode ? { arguments_file: invocation.args[5], arguments_root: invocation.args[7] } : {}),
   });
   if (JSON.stringify(rebuilt.args) !== JSON.stringify(invocation.args)) throw new TypeError('cursor invocation is invalid');
 }
@@ -131,7 +152,13 @@ export async function runCursorIndexer(
   if (result.output_exceeded) throw new CursorIndexerError('output-limit');
   if (result.timed_out) throw new CursorIndexerError('timeout');
   if (result.aborted || policy.signal?.aborted) throw new CursorIndexerError('aborted');
-  if (result.exit_code !== 0) throw new CursorIndexerError('nonzero-exit');
+  if (result.exit_code !== 0) {
+    const classified = new Map<number, CursorIndexerErrorCode>([
+      [10, 'input-rejected'], [11, 'initialization-failed'], [12, 'parse-failed'], [13, 'record-limit'], [14, 'output-failed'],
+      [21, 'parse-failed'], [22, 'parse-crashed'], [23, 'parse-invalid-arguments'], [24, 'parse-ast-read-error'],
+    ]).get(result.exit_code) ?? 'nonzero-exit';
+    throw new CursorIndexerError(classified);
+  }
   let parsed: CursorIndexResult;
   try { parsed = parseCursorIndexerJsonLines(result.stdout, workspaceRoots); } catch { throw new CursorIndexerError('invalid-output'); }
   if (parsed.error_count > errorLimit) throw new CursorIndexerError('diagnostic-errors');

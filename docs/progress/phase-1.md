@@ -521,3 +521,50 @@ Known limitations and next work:
 - The live package used the accepted VS2022 Clang/libclang 19.1.5 environment and ignored `dist` artifacts only. It does not resolve the modified/partial working-copy, clean pinned-revision, HTTP SVN policy, target-matrix, or `dte80a.cpp` reviewer blockers.
 
 Next work: use the reproducible artifact hash in a calibrated, bounded Engine+HT sample run; record throughput, peak working set, diagnostics, retries, deduplication and checkpoint behavior without presenting the diagnostic working copies as clean G1 evidence. Phase 2 remains frozen.
+
+## P1-09 increment — calibrated Engine+HT cursor sample and real-corpus hardening
+
+Status: bounded diagnostic sampling and the associated production-boundary hardening are complete on 2026-08-29; the evidence is explicitly non-G1 because both working copies are modified/partial and the sample uses a diagnostic language profile with a nonzero error allowance. Database persistence, named gold review, clean pinned-revision evidence, and governance acceptance remain pending.
+
+Deliverables:
+
+- Windows command-line limits no longer force large normalized actions onto the process command line. Each action now writes a bounded 8 MiB, newline-delimited, content-addressed argument file below the existing checkpoint state root; the native tool accepts only the fixed `--arguments-file`/`--arguments-root` form, validates the canonical root, size, line grammar and forbidden options, and never invokes a compiler or shell.
+- Argument files are immutable, hash-named, atomically published, byte-verified on reuse, and coalesced by content hash when concurrent actions share the same arguments. This closes the real concurrent-rename race found by repeated focused testing.
+- P1-08 normalization strips reviewed compiler/PCH write artifacts before orchestration, including object, PDB, dependency, serialized-diagnostic, module-cache/output, saved-temporary and precompiled-header options. `/FI` forced includes remain distinct from `/Fi` preprocessed output.
+- The fixed native boundary now returns stable safe exit classes for rejected input, initialization, parse failure/crash/invalid arguments/AST-read failure, record limits and output failure. The runner maps only those classes, redacts raw stderr, and preserves default zero-error diagnostic enforcement.
+- A named `ue-msvc-cxx20` diagnostic profile derives include paths, forced includes and definitions from the revalidated normalized command while using the fixed `c++`/C++20/MSVC language baseline. It intentionally omits driver/code-generation/debug flags that libclang's parse API rejected with `CXError_ASTReadError`; the profile name is part of the immutable batch-plan hash and is not silently selected for production.
+- The immutable plan hash also binds concurrency, retry count, timeout, output ceiling and diagnostic-error ceiling. A checkpoint produced under the diagnostic 64-error allowance therefore cannot be resumed under the production zero-error default or any other changed execution policy.
+- Strict JSONL handling was hardened against real libclang output: bounded multiline documentation is normalized; translation-unit path text and unusable ranges are counted as unidentified rather than persisted as fake identities; division operators remain valid qualified names; empty type/result spellings may be enriched by a nonempty declaration.
+- Raw-USR records with contradictory nonempty identity/type metadata, seen for template instantiations in the real corpus, are no longer arbitrarily merged or allowed to fail an otherwise useful TU. The complete ambiguous USR is discarded and every affected record/location is counted as unidentified, both within one TU and across TUs. Compatible raw-USR locations remain deterministically deduplicated.
+- The benchmark selector is deterministic, root-balanced, variant-deduplicated and Clang-only. It verifies the exact compile-database SHA-256 and packaged artifact hash, expands only bounded workspace-confined response files, caps sampling at 16 actions per root, concurrency at four, and emits an immutable report labeled `diagnostic-modified-partial-not-g1`.
+- The benchmark independently recomputes the runtime artifact hash from the fixed ordered five-file manifest and verifies the size and SHA-256 of the executable, DLL, both notice files and package SBOM before accepting the native tool hash.
+- Generated arguments, checkpoints, reports, native binaries and runtime packages remain under ignored paths and are not committed.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/compile-database.test.mjs tests/unit/cursor-stream.test.mjs tests/unit/cursor-runner.test.mjs tests/unit/cursor-batch.test.mjs tests/unit/cursor-benchmark.test.mjs tests/unit/clang-cursor-native.test.mjs
+powershell -NoProfile -File tools/build-clang-cursor-indexer.ps1 <fixed toolchain inputs> -OutputFile <repro-final-a>
+powershell -NoProfile -File tools/build-clang-cursor-indexer.ps1 <fixed toolchain inputs> -OutputFile <repro-final-b>
+npm run native:package -- <fixed verified inputs for repro-final-a/package-final-a>
+npm run native:package -- <fixed verified inputs for repro-final-b/package-final-b>
+npm run native:benchmark -- <hash-pinned Engine+HT diagnostic sample inputs>
+npm run ci
+npm run release:check
+```
+
+- Focused compile/cursor/native/benchmark suite: 30/30 passed. Repeating the concurrency-sensitive batch suite three times produced 15/15 passes after argument-file write coalescing.
+- Full repository CI: 84/84 passed; formatting, security-boundary lint, build, native-aware permissive-license audit, and CycloneDX generation with one declared native dependency passed. Release policy passed for `0.1.0`.
+- Two final independent `/Brepro` builds produced identical executable SHA-256 `e1298d75c2a0e33965caf01aea4b9ce31416f6a989f217a2df1affdcb9eb4896`. Their complete runtime packages both produced artifact hash `0527b0eeffc1ea4dddd801b27f39a7a5487eef4142674e4c5f4a4a1ba6d6ad43`, retaining the pinned libclang and vendor-notice hashes recorded above.
+- The final policy-bound two-per-root sample verified compile database SHA-256 `a561f7292bd22b2a28871cc85a0760c93c81cdd8a343304efb351964cab07a8d`, selected four deterministic actions, expanded seven response files/131,723 bytes, and completed in 458,946 ms at one-action concurrency with two checkpoints and four total attempts. Re-running the identical plan from those checkpoints completed in 4,397 ms without increasing the persisted attempt count.
+- That four-action diagnostic sample emitted 375 diagnostics including 45 errors, 37,319 unidentified/ambiguous records, 205,757 unique symbols, 153,341 deduplicated symbol records and 160,948 deduplicated locations. The coordinator's in-process peak RSS observation was 1,651,572,736 bytes.
+- A separate one-per-root run sampled OS working sets every 100 ms: 240,363 ms for two actions, 187 diagnostics including 22 errors, 14,477 unidentified records and 163,001 unique symbols. Peak coordinator working set was 1,348,239,360 bytes, peak native-child working set was 1,361,555,456 bytes, and the maximum same-sample combined working set was 1,597,394,944 bytes.
+
+Known limitations and next work:
+
+- The diagnostic profile first failed closed when the full normalized driver arguments produced `parse-ast-read-error`; a four-error allowance then failed closed as `diagnostic-errors`. The completed samples used the explicit maximum diagnostic-only allowance of 64 errors per action and observed substantial real parse errors. Production remains default-deny at zero; these results measure behavior and resource bounds, not semantic acceptance.
+- The sample is four of 29,344 normalized Clang actions and does not establish full-corpus throughput, memory, correctness or completion. The fixed C++20/MSVC profile must be reviewed against the production target/configuration matrix before it can become an accepted indexing profile.
+- The modified/partial Engine and project working copies, intentionally present `InstalledBuild.txt`, HTTP SVN URL, and non-Clang `dte80a.cpp` exception remain diagnostic inputs only. They cannot supply clean pinned-revision or named-reviewer G1 evidence.
+- P1-09 still needs final PostgreSQL symbol/location persistence integration and named Engine+project gold review. Formal release/license review, encrypted SVN policy acceptance or an approved exception, clean revisions, the production target matrix, and the named UE reviewer for `dte80a.cpp` remain the external blockers.
+
+Next work: continue P1-09 with bounded transactional database persistence and named-gold comparison using the now checkpointed aggregate contract. Do not widen the diagnostic argument/error profile without review, and do not enter Phase 2 until every technical gate and human G1 sign-off is complete.
