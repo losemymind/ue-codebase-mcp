@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "suite_id": "p1-09-libclang-19.1.5-symbol-gold",
+  "allowed_extra_kinds": [
+    "parameter"
+  ],
+  "symbols": [
+    {
+      "expectation_id": "macro-uclass",
+      "stable_usr": "c:SymbolGold.h@22@macro@UCLASS",
+      "qualified_name": "UCLASS",
+      "name": "UCLASS",
+      "display_name": "UCLASS",
+      "kind": "macro",
+      "owner_usr": null,
+      "type_spelling": "",
+      "result_type": "",
+      "documentation": null,
+      "clang_documentation_id": null,
+      "template_parameters": [],
+      "uht_specifiers": [],
+      "uht_metadata": {},
+      "blueprint_exposure": "none",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 3, "start_column": 9, "end_line": 3, "end_column": 20 }
+      ]
+    },
+    {
+      "expectation_id": "macro-ufunction",
+      "stable_usr": "c:SymbolGold.h@42@macro@UFUNCTION",
+      "qualified_name": "UFUNCTION",
+      "name": "UFUNCTION",
+      "display_name": "UFUNCTION",
+      "kind": "macro",
+      "owner_usr": null,
+      "type_spelling": "",
+      "result_type": "",
+      "documentation": null,
+      "clang_documentation_id": null,
+      "template_parameters": [],
+      "uht_specifiers": [],
+      "uht_metadata": {},
+      "blueprint_exposure": "none",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 4, "start_column": 9, "end_line": 4, "end_column": 23 }
+      ]
+    },
+    {
+      "expectation_id": "macro-uproperty",
+      "stable_usr": "c:SymbolGold.h@65@macro@UPROPERTY",
+      "qualified_name": "UPROPERTY",
+      "name": "UPROPERTY",
+      "display_name": "UPROPERTY",
+      "kind": "macro",
+      "owner_usr": null,
+      "type_spelling": "",
+      "result_type": "",
+      "documentation": null,
+      "clang_documentation_id": null,
+      "template_parameters": [],
+      "uht_specifiers": [],
+      "uht_metadata": {},
+      "blueprint_exposure": "none",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 5, "start_column": 9, "end_line": 5, "end_column": 23 }
+      ]
+    },
+    {
+      "expectation_id": "macro-generated-body",
+      "stable_usr": "c:SymbolGold.h@88@macro@GENERATED_BODY",
+      "qualified_name": "GENERATED_BODY",
+      "name": "GENERATED_BODY",
+      "display_name": "GENERATED_BODY",
+      "kind": "macro",
+      "owner_usr": null,
+      "type_spelling": "",
+      "result_type": "",
+      "documentation": null,
+      "clang_documentation_id": null,
+      "template_parameters": [],
+      "uht_specifiers": [],
+      "uht_metadata": {},
+      "blueprint_exposure": "none",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 6, "start_column": 9, "end_line": 6, "end_column": 25 }
+      ]
+    },
+    {
+      "expectation_id": "namespace-gold",
+      "stable_usr": "c:@N@Gold",
+      "qualified_name": "Gold",
+      "name": "Gold",
+      "display_name": "Gold",
+      "kind": "namespace",
+      "owner_usr": null,
+      "type_spelling": "",
+      "result_type": "",
+      "documentation": null,
+      "clang_documentation_id": null,
+      "template_parameters": [],
+      "uht_specifiers": [],
+      "uht_metadata": {},
+      "blueprint_exposure": "none",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 8, "start_column": 1, "end_line": 34, "end_column": 2 }
+      ]
+    },
+    {
+      "expectation_id": "template-box",
+      "stable_usr": "c:@N@Gold@ST>1#T@Box",
+      "qualified_name": "Gold::Box",
+      "name": "Box",
+      "display_name": "Box<T>",
+      "kind": "class",
+      "owner_usr": "c:@N@Gold",
+      "type_spelling": "",
+      "result_type": "",
+      "documentation": "A documented template used to verify stable symbol identities.",
+      "clang_documentation_id": "E1554323F8D7539C03099E6DA924B8463225B9AE",
+      "template_parameters": ["typename T"],
+      "uht_specifiers": [],
+      "uht_metadata": {},
+      "blueprint_exposure": "none",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 11, "start_column": 1, "end_line": 15, "end_column": 2 }
+      ]
+    },
+    {
+      "expectation_id": "template-box-value",
+      "stable_usr": "c:@N@Gold@ST>1#T@Box@FI@Value",
+      "qualified_name": "Gold::Box::Value",
+      "name": "Value",
+      "display_name": "Value",
+      "kind": "field",
+      "owner_usr": "c:@N@Gold@ST>1#T@Box",
+      "type_spelling": "T",
+      "result_type": "",
+      "documentation": null,
+      "clang_documentation_id": null,
+      "template_parameters": [],
+      "uht_specifiers": [],
+      "uht_metadata": {},
+      "blueprint_exposure": "none",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 14, "start_column": 3, "end_line": 14, "end_column": 12 }
+      ]
+    },
+    {
+      "expectation_id": "uobject-gold-actor",
+      "stable_usr": "c:@N@Gold@S@UGoldActor",
+      "qualified_name": "Gold::UGoldActor",
+      "name": "UGoldActor",
+      "display_name": "UGoldActor",
+      "kind": "class",
+      "owner_usr": "c:@N@Gold",
+      "type_spelling": "Gold::UGoldActor",
+      "result_type": "",
+      "documentation": null,
+      "clang_documentation_id": "935F42DA7D49F5E486A5AD133D593BEF004B535A",
+      "template_parameters": [],
+      "uht_specifiers": ["BlueprintType", "DisplayName"],
+      "uht_metadata": { "DisplayName": "Gold Actor" },
+      "blueprint_exposure": "type",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 18, "start_column": 1, "end_line": 32, "end_column": 2 }
+      ]
+    },
+    {
+      "expectation_id": "overload-int",
+      "stable_usr": "c:@N@Gold@S@UGoldActor@F@Overload#I#1",
+      "qualified_name": "Gold::UGoldActor::Overload",
+      "name": "Overload",
+      "display_name": "Overload(int)",
+      "kind": "method",
+      "owner_usr": "c:@N@Gold@S@UGoldActor",
+      "type_spelling": "int (int) const",
+      "result_type": "int",
+      "documentation": "Returns the integer value unchanged.",
+      "clang_documentation_id": "435CF83AC23D04BA55DB89840FE6156C6F955825",
+      "template_parameters": [],
+      "uht_specifiers": ["BlueprintCallable", "Category"],
+      "uht_metadata": { "Category": "Gold" },
+      "blueprint_exposure": "callable",
+      "locations": [
+        { "kind": "declaration", "file": "SymbolGold.h", "start_line": 24, "start_column": 3, "end_line": 24, "end_column": 32 },
+        { "kind": "definition", "file": "SymbolGold.cpp", "start_line": 3, "start_column": 1, "end_line": 5, "end_column": 2 }
+      ]
+    },
+    {
+      "expectation_id": "overload-double",
+      "stable_usr": "c:@N@Gold@S@UGoldActor@F@Overload#d#1",
+      "qualified_name": "Gold::UGoldActor::Overload",
+      "name": "Overload",
+      "display_name": "Overload(double)",
+      "kind": "method",
+      "owner_usr": "c:@N@Gold@S@UGoldActor",
+      "type_spelling": "double (double) const",
+      "result_type": "double",
+      "documentation": "Returns the floating-point value unchanged.",
+      "clang_documentation_id": "08D230C817307628B4FEC5EFA28360371D4D65EA",
+      "template_parameters": [],
+      "uht_specifiers": ["BlueprintPure", "Category"],
+      "uht_metadata": { "Category": "Gold" },
+      "blueprint_exposure": "pure",
+      "locations": [
+        { "kind": "declaration", "file": "SymbolGold.h", "start_line": 28, "start_column": 3, "end_line": 28, "end_column": 38 },
+        { "kind": "definition", "file": "SymbolGold.cpp", "start_line": 7, "start_column": 1, "end_line": 9, "end_column": 2 }
+      ]
+    },
+    {
+      "expectation_id": "property-count",
+      "stable_usr": "c:@N@Gold@S@UGoldActor@FI@Count",
+      "qualified_name": "Gold::UGoldActor::Count",
+      "name": "Count",
+      "display_name": "Count",
+      "kind": "field",
+      "owner_usr": "c:@N@Gold@S@UGoldActor",
+      "type_spelling": "int",
+      "result_type": "",
+      "documentation": null,
+      "clang_documentation_id": null,
+      "template_parameters": [],
+      "uht_specifiers": ["BlueprintReadOnly", "Category"],
+      "uht_metadata": { "Category": "Gold" },
+      "blueprint_exposure": "property",
+      "locations": [
+        { "kind": "definition", "file": "SymbolGold.h", "start_line": 31, "start_column": 3, "end_line": 31, "end_column": 16 }
+      ]
+    }
+  ],
+  "review": {
+    "status": "pending",
+    "reviewer": null,
+    "approved_at": null,
+    "payload_sha256": null
+  }
+}

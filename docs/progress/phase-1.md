@@ -606,3 +606,41 @@ Known limitations and next work:
 - Modified/partial Engine+HT working copies, HTTP SVN policy, clean pinned revisions, the target matrix and named review of `dte80a.cpp` remain unchanged external blockers.
 
 Next work: implement the P1-09 named-gold comparator and exercise it over the committed synthetic class/template/overload/field/UHT fixture. Run live migration/persistence acceptance only when a disposable PostgreSQL+pgvector test database and approved connection policy are available. Phase 2 remains frozen.
+
+## P1-09 increment — versioned symbol gold comparison and review binding
+
+Status: deterministic synthetic-gold comparison is technically complete on 2026-08-31; named UE reviewer approval and representative clean Engine+project acceptance evidence remain pending, so the comparator deliberately reports acceptance failure.
+
+Deliverables:
+
+- A closed version-1 symbol-gold schema pins 11 reviewed core expectations from the committed C++/clang-doc/UHT fixture: four macros, the namespace, template class and field, UObject-style class, two distinct overloads, and the reflected property.
+- Every expectation fixes the raw USR, owner, name/display/qualified name, kind, type/result, normalized documentation, clang-doc ID, template parameters, UHT specifiers/metadata, Blueprint exposure, and exact relative declaration/definition ranges. Absolute, parent-traversing and platform-specific gold paths are rejected.
+- The fixture is calibrated to the live VS2022 libclang `19.1.5` probe. Its 18 raw records merge into 15 symbols; the only four permitted extras are location-specific parameter symbols. Any other extra kind fails instead of silently expanding the accepted set.
+- The strict parser rejects unknown/missing fields, unsupported versions/exposures, duplicate expectation IDs/USRs/locations, invalid clang-doc IDs, excessive input, malformed paths, and incomplete review records.
+- Comparison is keyed by raw USR and fails closed for missing symbols, non-allowlisted extras, or drift in any expected field. It rejects duplicate actual USRs and source locations outside the configured workspace.
+- Reports contain only controlled expectation IDs, mismatch codes and field names. Unexpected actual USRs, paths and values are not echoed, so private-corpus identities are not exposed through failure diagnostics.
+- Human approval is bound to the canonical expectation payload SHA-256. The current payload hash is `60728f4b37a0d11c7a1b3a66c7364d02967131c690d8132bb1aee725e23436dc`; changing any technical expectation invalidates an older approval automatically.
+- The committed fixture intentionally has `review.status = pending` with no fabricated reviewer or timestamp. A perfect technical match therefore produces `technical_pass = true` and `acceptance_pass = false` until a named reviewer signs the exact payload.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/symbol-gold.test.mjs tests/unit/symbol-merge.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused gold/merge suite: 6/6 passed. It covers the exact native capture, clang-doc/UHT merge, allowed parameter extras, approval binding and invalidation, missing/drifted/unexpected symbols, error redaction, and closed-schema negative cases.
+- The live ignored native package replay emitted the expected 18 records with zero diagnostics and zero errors before the committed expectations were written; no generated binary was added to Git.
+- Full repository CI: 93/93 passed in the repository-owner execution context; formatting, boundary lint, build, native-aware license policy and CycloneDX generation with one declared native dependency passed.
+- The first offline-sandbox CI attempt passed 92/93 and reproduced only the known Windows SVN fixture `E720005` ownership failure. The unchanged suite then passed 93/93 under the repository owner; no threshold or assertion was weakened.
+- Release policy passed for `0.1.0`.
+
+Known limitations and next work:
+
+- This committed synthetic gold proves comparator behavior and the pinned libclang extraction contract; it is not representative clean Engine+HT correctness evidence and cannot substitute for a named UE reviewer.
+- Review approval must name a real reviewer, timestamp the decision and bind the exact payload hash. No approval is inferred from automated tests or from the diagnostic modified/partial corpus sample.
+- Live PostgreSQL+pgvector migration/persistence acceptance remains blocked by the absent disposable test database, approved driver/pool, TLS policy and deployment secret contract.
+- Modified/partial Engine+HT working copies, the HTTP SVN endpoint policy, clean pinned revisions, the production target matrix, formal native license/release review and named review of `dte80a.cpp` remain unchanged external blockers.
+
+Next work: treat P1-09 technical implementation as complete but not accepted. Continue unblocked Phase 1 work in plan order, while leaving live database rehearsal, representative Engine+project gold approval and all G1 governance items explicitly pending. Phase 2 remains frozen.
