@@ -49,7 +49,7 @@ function tableNames(sql, operation) {
 
 test('migration manifest is contiguous and every migration is transactional', async () => {
   assert.equal(manifest.schema, 'ue_mcp');
-  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5]);
+  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5, 6]);
 
   for (const migration of manifest.migrations) {
     for (const direction of ['up', 'down']) {
@@ -107,6 +107,26 @@ test('P1-12 persistence migration adds stable chunk identity and atomic import m
   assert.match(up, /index_generations_chunk_import_state_check/);
   assert.match(up, /chunks_imported_at IS NULL OR symbols_imported_at IS NOT NULL/);
   assert.match(up, /VALUES \(5, 'p1_12_chunk_persistence'/);
+});
+
+test('P1-14 migration binds validated publication evidence, fencing, audit history, and reversible GC support', async () => {
+  const up = await readFile(path.join(migrationRoot, '0006_p1_14_generation_publication.up.sql'), 'utf8');
+  const down = await readFile(path.join(migrationRoot, '0006_p1_14_generation_publication.down.sql'), 'utf8');
+  for (const field of ['manifest_hash', 'validation_hash', 'validated_at', 'embedding_provider', 'embedding_model',
+    'embedding_dimensions', 'embedding_count', 'superseded_at', 'gc_claim_hash', 'gc_claimed_at', 'publication_version']) {
+    assert.match(up, new RegExp(`ADD COLUMN ${field}\\b`));
+    assert.match(down, new RegExp(`DROP COLUMN ${field}\\b`));
+  }
+  assert.match(up, /index_generations_validation_state_check/);
+  assert.match(up, /index_generations_gc_claim_state_check/);
+  assert.match(up, /status NOT IN \('ready', 'active', 'superseded'\) OR validated_at IS NOT NULL/);
+  assert.match(up, /CREATE TABLE ue_mcp\.generation_publication_events/);
+  assert.match(up, /'staged', 'validated', 'validation_failed', 'published', 'rolled_back', 'gc_claimed', 'gc_deleted'/);
+  assert.match(up, /target_generation_id uuid NOT NULL/);
+  assert.doesNotMatch(up, /target_generation_id uuid NOT NULL REFERENCES/, 'GC audit identity must survive generation deletion');
+  assert.match(up, /VALUES \(6, 'p1_14_generation_publication'/);
+  assert.match(down, /version = 6 AND name = 'p1_14_generation_publication'/);
+  assert.match(down, /DROP TABLE ue_mcp\.generation_publication_events/);
 });
 
 test('core migration covers phase 1 sections 5.1 through 5.3 and 5.5 only', async () => {

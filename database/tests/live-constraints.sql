@@ -114,6 +114,24 @@ BEGIN
   END;
 
   BEGIN
+    UPDATE index_generations
+    SET status = 'ready', manifest_uri = 'https://artifacts.example/invalid.json'
+    WHERE id = generation_id;
+    RAISE EXCEPTION 'ready generation without validated publication evidence was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE index_generations
+    SET manifest_hash = decode(repeat('88', 32), 'hex')
+    WHERE id = generation_id;
+    RAISE EXCEPTION 'partial generation validation evidence was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
     INSERT INTO jobs (
       project_id,
       type,

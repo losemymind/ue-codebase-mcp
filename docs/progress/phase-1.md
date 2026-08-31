@@ -880,3 +880,43 @@ Known limitations and next work:
 - No live concurrency/P95/P99, HNSW `EXPLAIN`, timing-side-channel, ACL-reduction or production-scale high-fanout exercise has run. All existing G1, P1-09, P1-10 and P1-12 external blockers remain explicit. Phase 2 remains frozen.
 
 Next work: keep the single `codex/phase-1-foundation` line and implement P1-14 generation staging validation, atomic publication, rollback and GC. This will make the already active-only P1-13 store testable end to end without weakening the recorded ACL/provider/live-database acceptance gates. Do not enter Phase 2.
+
+## P1-14 increment — generation validation, atomic publication, rollback and GC
+
+Status: the fixed generation lifecycle coordinator and migration are technically implemented on 2026-08-31. It creates revision-pinned staging generations, validates a locked completeness snapshot, atomically swaps the project active generation, supports fenced rollback and performs retention-safe two-phase garbage collection. Live PostgreSQL concurrency/query evidence, a production manifest store and exact workspace-manifest-to-database revision-set binding remain pending, so P1-14 is not formally accepted.
+
+Deliverables:
+
+- Migration `0006_p1_14_generation_publication` adds manifest and validation hashes, the approved embedding profile/count, validation and supersede timestamps, monotonic publication fencing and paired GC-claim evidence. New ready/active/superseded writes require validation evidence; superseded and GC-claim states have paired constraints. Existing legacy rows are intentionally covered by `NOT VALID` transition constraints so an upgrade does not invent evidence; production rollout must remediate legacy rows and explicitly validate those constraints.
+- An immutable `generation_publication_events` audit table records staged, validated, validation-failed, published, rolled-back, GC-claimed and GC-deleted transitions. It retains the target generation UUID without a deleting foreign key so GC cannot erase its audit identity. Actor, request hash, publication version and previous active generation are written in the same state-changing transaction.
+- Staging locks the project row, accepts only an active project, validates a bounded exact revision/branch set against enabled repositories in that project and rejects more than one tracked branch per repository. Generation and revision mapping creation is atomic, replay-safe and rejects a changed mapping for the same revision-set hash.
+- Validation locks both project and generation. It requires completed symbol, relation and chunk import markers; exact stored-versus-actual symbol/location/edge/dependency/chunk counts; one selected embedding for every chunk; no content-hash mismatch; at least one revision; one repository per pinned revision; no unresolved index failure; and no cross-generation repository, module, symbol, location, edge, dependency, chunk or evidence binding.
+- The validation fingerprint binds the project/generation/revision-set identity, canonical credential-free manifest URI/hash, embedding profile, all import plan/payload hashes and the explicit count/integrity snapshot. Deterministic validation failure leaves the previous active generation untouched, changes only the building target to `failed` and writes a redacted `validation_failed` event in a separate recovery transaction.
+- Publication and rollback serialize on the project row and fence every target by `publication_version`. Publication changes the previous active row to superseded and the ready row to active inside one database transaction; any second-step or audit failure rolls the first step back. Rollback requires the exact expected current active generation and a validated, non-GC-claimed superseded target, then performs the inverse atomic swap.
+- Every lifecycle statement is fixed, named and parameterized. Runtime requests are closed/bounded, manifest URIs reject credentials/query strings/fragments, adapter rows are validated and database/object-store details are reduced to stable content-safe error codes. Exact staging, validation and publication replays do not duplicate audit events.
+- GC is dry-run by default, bounded to 100 rows and can select only old superseded or failed generations. The SQL retains at least the two most recently published valid generations, retains all generations for at least seven days, excludes active/ready/building generations and excludes generations used by a running backup.
+- Executing GC requires an explicit UUID operation ID and a typed manifest-store adapter. A first short transaction claims each candidate with a deterministic hash/version and writes `gc_claimed`, preventing rollback. Manifest deletion then runs outside database locks with stable idempotency keys. Only after bounded deletion receipts validate does a second fenced transaction write `gc_deleted` and remove database rows. Object-store failure leaves the claim and all database content for same-operation retry; final database failure leaves an already deleted manifest safely retryable rather than deleting database evidence first.
+
+Verification commands and results:
+
+```powershell
+node --test --test-reporter=spec tests/integration/database-migrations.test.mjs tests/unit/generation-publication.test.mjs
+npm run ci
+npm run release:check
+where.exe psql
+```
+
+- Focused migration/lifecycle coverage passed 20/20. It covers exact staging/replay, project/repository isolation, completeness and embedding coverage, validation quarantine, stale fencing, publish/replay, publish rollback on injected failure, exact rollback, retention preview, two-phase GC, manifest failure recovery, fixed SQL and error redaction.
+- Full repository CI passed 172/172. Formatting, lint, build, permissive-license audit and CycloneDX generation with one declared native dependency passed.
+- `where.exe psql` found no executable. Migration execution, `NOT VALID` remediation/validation, row-lock blocking, unique-active enforcement, concurrent publish/rollback/GC schedules and destructive cascade behavior therefore still have static and synthetic evidence only.
+
+Known limitations and next work:
+
+- The workspace revision-set hash is computed from configured logical repository IDs/roles/URLs/revisions, while the database repositories table has UUIDs but no matching logical repository ID. Staging validates the exact database revision mappings but cannot independently reconstruct the workspace hash. Add a durable logical repository identity or persist and verify the canonical workspace manifest before claiming end-to-end revision binding.
+- The coordinator validates a supplied manifest hash and uses a typed deletion adapter, but this repository has no production object-store implementation that reads, hashes, deletes and returns provider-backed receipts. Synthetic adapters prove ordering/idempotency only; retention deletion is not operationally accepted.
+- Legacy ready/active/superseded rows predating migration 0006 cannot be assigned fabricated validation evidence. Deployment needs an inventory and quarantine/rebuild procedure followed by `VALIDATE CONSTRAINT` for both publication transition constraints.
+- Module rows and cross-generation module links are checked, but P1-11 currently has no atomic module import marker/count comparable to symbols, relations and chunks. A generation can therefore prove module isolation but not module-corpus completeness.
+- A GC claim deliberately has no unsafe timeout takeover: after an operator loses the operation ID, recovery requires an audited reconciliation against object storage before claim release. The admin recovery workflow remains future operations work.
+- No live PostgreSQL, real object-store, high-volume cascade, backup/GC race, P95/P99 or process-crash-between-GC-phases exercise has run. All earlier G1 and P1-09 through P1-13 acceptance blockers remain explicit. Phase 2 remains frozen.
+
+Next work: keep the single `codex/phase-1-foundation` line and proceed to P1-15 MCP protocol/read-only tools only as a technical increment. P1-15 may consume active-only retrieval and lifecycle contracts, but Phase 1 acceptance must remain blocked until the recorded database, ACL, provider, corpus, revision-binding and object-store evidence is complete. Do not enter Phase 2.

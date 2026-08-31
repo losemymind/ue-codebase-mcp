@@ -30,6 +30,12 @@
       "name": "p1_12_chunk_persistence",
       "up": "0005_p1_12_chunk_persistence.up.sql",
       "down": "0005_p1_12_chunk_persistence.down.sql"
+    },
+    {
+      "version": 6,
+      "name": "p1_14_generation_publication",
+      "up": "0006_p1_14_generation_publication.up.sql",
+      "down": "0006_p1_14_generation_publication.down.sql"
     }
   ]
 }
