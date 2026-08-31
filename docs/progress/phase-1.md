@@ -644,3 +644,38 @@ Known limitations and next work:
 - Modified/partial Engine+HT working copies, the HTTP SVN endpoint policy, clean pinned revisions, the production target matrix, formal native license/release review and named review of `dte80a.cpp` remain unchanged external blockers.
 
 Next work: treat P1-09 technical implementation as complete but not accepted. Continue unblocked Phase 1 work in plan order, while leaving live database rehearsal, representative Engine+project gold approval and all G1 governance items explicitly pending. Phase 2 remains frozen.
+
+## P1-10 increment — bounded relation aggregation foundation
+
+Status: the typed in-memory aggregation boundary is complete on 2026-08-31; native extraction, checkpoint integration, persistence and relation-gold precision/recall evidence remain pending, so no P1-10 acceptance claim is made.
+
+Deliverables:
+
+- A dedicated relation index accepts only versioned shards containing the four extracted symbol-edge kinds in current P1-10 scope: `calls`, `references`, `inherits` and `overrides`. File `include` edges use a separate typed record; arbitrary database edge types are not accepted through this boundary.
+- Structural `owns` edges cannot be supplied by an extractor. They are derived at confidence `1` only from the already validated symbol owner USR, preventing an untrusted TU record from inventing ownership.
+- Symbol and file edges are deterministically sorted and deduplicated across TU shards. Duplicate semantic evidence retains the highest bounded confidence while exact include evidence collapses by source, destination, line and column.
+- Extracted endpoints must resolve to the accepted full symbol set before publication. Unresolved semantic and owner edges are counted separately and discarded without returning their private USRs.
+- All optional semantic evidence locations are all-or-none, absolute, bounded and confined below one of at most 64 configured workspace roots. Include source and destination files are both confined; self-includes, path escapes and partial locations fail closed.
+- The closed shard/edge contract rejects unknown fields, unknown edge types, duplicate symbol identities, invalid confidence/coordinates, self inheritance/override and self ownership. Inputs are capped at one million shards and eight million records per edge family.
+- The normal build imports the new module. It performs no process execution, filesystem writes, SQL or command interpretation.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/relation-index.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused relation aggregation suite: 4/4 passed. It covers ownership derivation, cross-TU duplicate/confidence handling, unresolved-edge redaction, order independence, workspace confinement, closed records, unsupported types, partial evidence and invalid identity relationships.
+- Full repository CI: 97/97 passed in the repository-owner execution context; formatting, boundary lint, build, native-aware license policy and CycloneDX generation with one declared native dependency passed.
+- Release policy passed for `0.1.0`.
+
+Known limitations and next work:
+
+- The current libclang JSONL protocol still emits symbols only. No synthetic relation is represented as native evidence; the protocol/parser/checkpoint upgrade must be versioned and preserve rejection of mixed or unrecognized records.
+- `calls`, `references`, `inherits`, `overrides` and `include` extraction semantics need a committed C++ gold corpus, live libclang `19.1.5` calibration and a review-bound precision/recall evaluator. The required acceptance threshold remains at least 95% for both metrics.
+- Relation persistence must resolve accepted USRs and file bindings transactionally against the same generation. This foundation does not write `symbol_edges` or `file_dependencies` and does not mark any generation ready.
+- All P1-09 external blockers and global G1 governance blockers remain unchanged. P1-10 work does not authorize Phase 2.
+
+Next work: version the native cursor stream for bounded relation records, add strict parser/checkpoint support and calibrate a committed relation gold for calls/references/inherits/overrides/includes/owns before adding transactional persistence. Phase 2 remains frozen.

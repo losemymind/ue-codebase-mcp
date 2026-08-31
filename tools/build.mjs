@@ -18,6 +18,7 @@ await import('../workers/clang-indexer/src/module-model.ts');
 await import('../workers/clang-indexer/src/compile-database.ts');
 await import('../workers/clang-indexer/src/cursor-batch.ts');
 await import('../workers/clang-indexer/src/gold-comparison.ts');
+await import('../workers/clang-indexer/src/relation-index.ts');
 const configExamples = ['project', 'repository', 'provider', 'preset'];
 for (const name of configExamples) {
   await loadConfigFile(path.join(root, 'configs', 'examples', `${name}-v1.yaml`));
