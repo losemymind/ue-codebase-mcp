@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ue-codebase-mcp.invalid/schemas/ownership-v1.json",
+  "title": "UE Codebase MCP ownership configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "active_mode",
+    "identities",
+    "modes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ue-codebase-mcp/ownership"
+    },
+    "version": {
+      "const": 1
+    },
+    "active_mode": {
+      "enum": [
+        "solo",
+        "team"
+      ]
+    },
+    "identities": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": {
+        "$ref": "#/$defs/identity"
+      }
+    },
+    "modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "solo",
+        "team"
+      ],
+      "properties": {
+        "solo": {
+          "$ref": "#/$defs/mode"
+        },
+        "team": {
+          "$ref": "#/$defs/mode"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "display_name",
+        "principal",
+        "configured"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "human",
+            "team"
+          ]
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "principal": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 256,
+          "pattern": "^[a-z][a-z0-9_-]{1,31}:[^\\s\\x00-\\x1f\\x7f]+$"
+        },
+        "configured": {
+          "type": "boolean"
+        }
+      }
+    },
+    "mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roles",
+        "policy"
+      ],
+      "properties": {
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "control_plane_technical_owner",
+            "security_release_approver",
+            "deployment_operator",
+            "fixed_device_witness",
+            "g1_gate_approver"
+          ],
+          "properties": {
+            "control_plane_technical_owner": {
+              "$ref": "#/$defs/identityReference"
+            },
+            "security_release_approver": {
+              "$ref": "#/$defs/identityReference"
+            },
+            "deployment_operator": {
+              "$ref": "#/$defs/identityReference"
+            },
+            "fixed_device_witness": {
+              "$ref": "#/$defs/identityReference"
+            },
+            "g1_gate_approver": {
+              "$ref": "#/$defs/identityReference"
+            }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "assurance_level",
+            "separation_required",
+            "phase_1_g1_eligible",
+            "risk_acceptance_id"
+          ],
+          "properties": {
+            "assurance_level": {
+              "enum": [
+                "self_attested",
+                "independently_approved"
+              ]
+            },
+            "separation_required": {
+              "type": "boolean"
+            },
+            "phase_1_g1_eligible": {
+              "type": "boolean"
+            },
+            "risk_acceptance_id": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]+$"
+            }
+          }
+        }
+      }
+    },
+    "identityReference": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]+$"
+    }
+  }
+}

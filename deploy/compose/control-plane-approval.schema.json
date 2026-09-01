@@ -8,8 +8,12 @@
     "schema",
     "version",
     "status",
+    "governance_mode",
+    "assurance_level",
+    "technical_owner",
     "approval_id",
     "approved_by",
+    "risk_acceptance_id",
     "approved_at",
     "expires_at",
     "image_reference",
@@ -36,6 +40,24 @@
         "approved"
       ]
     },
+    "governance_mode": {
+      "enum": [
+        "solo",
+        "team"
+      ]
+    },
+    "assurance_level": {
+      "enum": [
+        "self_attested",
+        "independently_approved"
+      ]
+    },
+    "technical_owner": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256,
+      "pattern": "^[a-z][a-z0-9_-]{1,31}:[^\\s\\x00-\\x1f\\x7f]+$"
+    },
     "approval_id": {
       "type": "string",
       "minLength": 3,
@@ -45,8 +67,14 @@
     "approved_by": {
       "type": "string",
       "minLength": 3,
+      "maxLength": 256,
+      "pattern": "^[a-z][a-z0-9_-]{1,31}:[^\\s\\x00-\\x1f\\x7f]+$"
+    },
+    "risk_acceptance_id": {
+      "type": "string",
+      "minLength": 3,
       "maxLength": 128,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@\\\\/-]+$"
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]+$"
     },
     "approved_at": {
       "type": [
@@ -148,6 +176,52 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "governance_mode": {
+            "const": "solo"
+          }
+        },
+        "required": [
+          "governance_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "assurance_level": {
+            "const": "self_attested"
+          },
+          "risk_acceptance_id": {
+            "not": {
+              "const": "NOT_APPLICABLE"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "governance_mode": {
+            "const": "team"
+          }
+        },
+        "required": [
+          "governance_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "assurance_level": {
+            "const": "independently_approved"
+          },
+          "risk_acceptance_id": {
+            "const": "NOT_APPLICABLE"
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {

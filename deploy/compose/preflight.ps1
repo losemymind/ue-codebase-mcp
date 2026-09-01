@@ -149,8 +149,12 @@ $approvalFields = @(
   'schema',
   'version',
   'status',
+  'governance_mode',
+  'assurance_level',
+  'technical_owner',
   'approval_id',
   'approved_by',
+  'risk_acceptance_id',
   'approved_at',
   'expires_at',
   'image_reference',
@@ -168,8 +172,12 @@ Assert-ExactProperties -Object $approval -Expected $approvalFields -Label 'Contr
 $approvalStringFields = @(
   'schema',
   'status',
+  'governance_mode',
+  'assurance_level',
+  'technical_owner',
   'approval_id',
   'approved_by',
+  'risk_acceptance_id',
   'approved_at',
   'expires_at',
   'image_reference',
@@ -194,11 +202,29 @@ if (($approval.schema -ne 'ue-codebase-mcp/control-plane-image-approval') -or
     ($approval.version -ne 1) -or ($approval.status -ne 'approved')) {
   throw 'ControlPlaneApprovalFile is not an approved version-1 control-plane record.'
 }
+$principalPattern = '^[a-z][a-z0-9_-]{1,31}:[^\s\x00-\x1f\x7f]{1,224}$'
 if (($approval.approval_id -notmatch '^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,127}$') -or
     ($approval.approval_id -match '(?i)pending|placeholder') -or
-    ($approval.approved_by -notmatch '^[A-Za-z0-9][A-Za-z0-9_.@\\/-]{2,127}$') -or
-    ($approval.approved_by -match '(?i)pending|placeholder')) {
+    ($approval.technical_owner -notmatch $principalPattern) -or
+    ($approval.technical_owner -match '(?i)unconfigured|pending|placeholder') -or
+    ($approval.approved_by -notmatch $principalPattern) -or
+    ($approval.approved_by -match '(?i)unconfigured|pending|placeholder') -or
+    ($approval.risk_acceptance_id -notmatch '^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,127}$')) {
   throw 'Control-plane approval identity fields are missing or placeholders.'
+}
+if ($approval.governance_mode -eq 'solo') {
+  if (($approval.assurance_level -ne 'self_attested') -or
+      ($approval.risk_acceptance_id -eq 'NOT_APPLICABLE')) {
+    throw 'Solo governance must remain self-attested with an explicit risk acceptance.'
+  }
+} elseif ($approval.governance_mode -eq 'team') {
+  if (($approval.assurance_level -ne 'independently_approved') -or
+      ($approval.risk_acceptance_id -ne 'NOT_APPLICABLE') -or
+      ($approval.technical_owner -ceq $approval.approved_by)) {
+    throw 'Team governance must use a distinct independent approver.'
+  }
+} else {
+  throw 'Control-plane approval governance mode is invalid.'
 }
 $datePattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$'
 if ($approval.approved_at -notmatch $datePattern -or $approval.expires_at -notmatch $datePattern) {
@@ -340,5 +366,7 @@ if ($images -cnotcontains $approval.image_reference) {
   SecretFileCount = $resolvedSecrets.Count
   ControlPlaneApprovalId = $approval.approval_id
   ControlPlaneSourceRevision = $approval.source_revision
+  GovernanceMode = $approval.governance_mode
+  AssuranceLevel = $approval.assurance_level
   MutatingAction = $false
 }

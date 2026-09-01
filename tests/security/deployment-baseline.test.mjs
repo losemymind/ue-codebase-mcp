@@ -31,10 +31,15 @@ test('control-plane approval contract cannot present the repository template as 
   assert.deepEqual(approvalSchema.properties.status.enum, ['pending', 'approved']);
   assert.equal(approvalSchema.properties.capabilities.additionalProperties, false);
   assert.equal(approvalSchema.properties.capabilities.required.length, 10);
-  assert.equal(approvalSchema.allOf[0].if.properties.status.const, 'approved');
-  assert.ok(Object.values(approvalSchema.allOf[0].then.properties.capabilities.properties)
+  assert.equal(approvalSchema.allOf[2].if.properties.status.const, 'approved');
+  assert.ok(Object.values(approvalSchema.allOf[2].then.properties.capabilities.properties)
     .every((definition) => definition.const === true));
   assert.equal(approvalExample.status, 'pending');
+  assert.equal(approvalExample.governance_mode, 'solo');
+  assert.equal(approvalExample.assurance_level, 'self_attested');
+  assert.equal(approvalExample.technical_owner, 'github:losemymind.libo@gmail.com');
+  assert.equal(approvalExample.approved_by, 'github:losemymind.libo@gmail.com');
+  assert.equal(approvalExample.risk_acceptance_id, 'PERSONAL-1');
   assert.match(approvalExample.image_reference, /^registry\.invalid\//);
   assert.match(approvalExample.image_reference, /@sha256:0{64}$/);
   assert.equal(approvalExample.source_revision, '0'.repeat(40));
@@ -87,6 +92,9 @@ test('deployment preflight is non-mutating and rejects unsafe inputs before depl
   assert.match(preflight, /ExpectedControlPlaneApprovalSha256 must not be a placeholder/);
   assert.match(preflight, /ControlPlaneApprovalFile hash did not match the independently approved value/);
   assert.match(preflight, /status -ne 'approved'/);
+  assert.match(preflight, /Solo governance must remain self-attested with an explicit risk acceptance/);
+  assert.match(preflight, /Team governance must use a distinct independent approver/);
+  assert.match(preflight, /technical_owner -ceq \$approval\.approved_by/);
   assert.match(preflight, /Every required control-plane capability must be explicitly approved/);
   assert.match(preflight, /CONTROL_PLANE_IMAGE must exactly match the independently approved image reference/);
   assert.match(preflight, /Assert-ArtifactHash -Path \$resolvedSbom/);

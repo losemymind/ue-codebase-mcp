@@ -1146,3 +1146,30 @@ npm run release:check
 - Docker and NGINX remain unavailable, so the strengthened preflight, Compose rendering, image inspection, TLS edge and fixed-device workflow were not executed. These static checks are not production image or deployment evidence.
 
 Next work: an externally accountable control-plane owner must implement the missing production entrypoint and adapters, build an immutable image from a reviewed source revision, generate and retain its SBOM and provenance, and obtain an independent time-bounded approval record/hash. Only after those real inputs exist may operations populate `CONTROL_PLANE_IMAGE` and run preflight on the fixed device. Do not convert the pending example, injected test ports or static CI into an approval claim; do not enter Phase 2.
+
+## P1-18 ownership governance checkpoint — solo active, team fail-closed
+
+Status: switchable ownership configuration was added on 2026-09-01. The active `solo` mode names `LIBO` as the personal technical owner and self-approver. This is explicitly self-attested and Phase 1 G1-ineligible; it is not independent control-plane acceptance. The inactive `team` mode is structurally complete but deliberately unconfigured, so no team ownership or approval is claimed.
+
+Deliverables:
+
+- `docs/governance/ownership.json` contains both modes behind one `active_mode` selector. Stable roles cover control-plane technical ownership, security/release approval, deployment operations, fixed-device witnessing and G1 approval.
+- Solo roles resolve to the user-supplied opaque principal `github:losemymind.libo@gmail.com`, display name `LIBO`, risk acceptance `PERSONAL-1`, and `self_attested` assurance. Solo mode cannot become G1 eligible through policy edits.
+- Team roles are pre-separated across five GitHub Team principals. Their `UNCONFIGURED` subjects fail validation while team mode is active; readiness requires real organization/team subjects and five distinct identities.
+- `tools/validate-ownership.mjs` enforces the closed shape, mode invariants, configured identities and team separation. `npm run governance:check` is part of repository CI, so changing only `active_mode` is sufficient after the one-time team identities are configured.
+- Control-plane approval records snapshot `governance_mode`, `assurance_level`, technical owner, approver and risk acceptance. Solo records require explicit self-attestation/risk acceptance; team records require a distinct independent approver. Historical solo approvals are never promoted by a later mode switch.
+- No CODEOWNERS rule was fabricated: the supplied email-shaped GitHub subject is not a verified GitHub `@login`, and the future GitHub Teams are not yet known. Repository branch protection must be configured from verified GitHub identities when those external inputs exist.
+
+Verification:
+
+```powershell
+npm run governance:check
+node --test tests/security/governance-ownership.test.mjs tests/security/deployment-baseline.test.mjs
+npm run ci
+```
+
+Acceptance boundary and next work:
+
+- Personal operation may use the active solo mapping, but any approval it issues remains self-attested and cannot satisfy an independent G1 signature.
+- Before team activation, replace all five `github-team:UNCONFIGURED/...` principals with real `github-team:<organization>/<team>` subjects, mark them configured, validate while still in solo mode, change only `active_mode` to `team`, validate again, then align CODEOWNERS and branch protection externally.
+- This checkpoint does not supply the missing production control-plane assembly, immutable image, SBOM/provenance, fixed-device inputs or rehearsal evidence. P1-18 remains in progress and Phase 2 remains frozen.

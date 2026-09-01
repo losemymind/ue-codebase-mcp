@@ -1,0 +1,75 @@
+{
+  "schema": "ue-codebase-mcp/ownership",
+  "version": 1,
+  "active_mode": "solo",
+  "identities": {
+    "personal_libo": {
+      "kind": "human",
+      "display_name": "LIBO",
+      "principal": "github:losemymind.libo@gmail.com",
+      "configured": true
+    },
+    "team_control_plane": {
+      "kind": "team",
+      "display_name": "Control Plane Team",
+      "principal": "github-team:UNCONFIGURED/control-plane",
+      "configured": false
+    },
+    "team_security": {
+      "kind": "team",
+      "display_name": "Security and Release Team",
+      "principal": "github-team:UNCONFIGURED/security",
+      "configured": false
+    },
+    "team_operations": {
+      "kind": "team",
+      "display_name": "Deployment Operations Team",
+      "principal": "github-team:UNCONFIGURED/operations",
+      "configured": false
+    },
+    "team_quality": {
+      "kind": "team",
+      "display_name": "Fixed Device Quality Team",
+      "principal": "github-team:UNCONFIGURED/quality",
+      "configured": false
+    },
+    "team_g1_reviewers": {
+      "kind": "team",
+      "display_name": "Phase 1 G1 Reviewers",
+      "principal": "github-team:UNCONFIGURED/g1-reviewers",
+      "configured": false
+    }
+  },
+  "modes": {
+    "solo": {
+      "roles": {
+        "control_plane_technical_owner": "personal_libo",
+        "security_release_approver": "personal_libo",
+        "deployment_operator": "personal_libo",
+        "fixed_device_witness": "personal_libo",
+        "g1_gate_approver": "personal_libo"
+      },
+      "policy": {
+        "assurance_level": "self_attested",
+        "separation_required": false,
+        "phase_1_g1_eligible": false,
+        "risk_acceptance_id": "PERSONAL-1"
+      }
+    },
+    "team": {
+      "roles": {
+        "control_plane_technical_owner": "team_control_plane",
+        "security_release_approver": "team_security",
+        "deployment_operator": "team_operations",
+        "fixed_device_witness": "team_quality",
+        "g1_gate_approver": "team_g1_reviewers"
+      },
+      "policy": {
+        "assurance_level": "independently_approved",
+        "separation_required": true,
+        "phase_1_g1_eligible": true,
+        "risk_acceptance_id": "NOT_APPLICABLE"
+      }
+    }
+  }
+}
