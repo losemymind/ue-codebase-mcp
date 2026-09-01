@@ -6,7 +6,7 @@
     "personal_libo": {
       "kind": "human",
       "display_name": "LIBO",
-      "principal": "github:losemymind.libo@gmail.com",
+      "principal": "github:losemymind",
       "configured": true
     },
     "team_control_plane": {

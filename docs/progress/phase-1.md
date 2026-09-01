@@ -1154,11 +1154,11 @@ Status: switchable ownership configuration was added on 2026-09-01. The active `
 Deliverables:
 
 - `docs/governance/ownership.json` contains both modes behind one `active_mode` selector. Stable roles cover control-plane technical ownership, security/release approval, deployment operations, fixed-device witnessing and G1 approval.
-- Solo roles resolve to the user-supplied opaque principal `github:losemymind.libo@gmail.com`, display name `LIBO`, risk acceptance `PERSONAL-1`, and `self_attested` assurance. Solo mode cannot become G1 eligible through policy edits.
+- Solo roles resolve to the user-confirmed principal `github:losemymind`, display name `LIBO`, risk acceptance `PERSONAL-1`, and `self_attested` assurance. Solo mode cannot become G1 eligible through policy edits.
 - Team roles are pre-separated across five GitHub Team principals. Their `UNCONFIGURED` subjects fail validation while team mode is active; readiness requires real organization/team subjects and five distinct identities.
 - `tools/validate-ownership.mjs` enforces the closed shape, mode invariants, configured identities and team separation. `npm run governance:check` is part of repository CI, so changing only `active_mode` is sufficient after the one-time team identities are configured.
 - Control-plane approval records snapshot `governance_mode`, `assurance_level`, technical owner, approver and risk acceptance. Solo records require explicit self-attestation/risk acceptance; team records require a distinct independent approver. Historical solo approvals are never promoted by a later mode switch.
-- No CODEOWNERS rule was fabricated: the supplied email-shaped GitHub subject is not a verified GitHub `@login`, and the future GitHub Teams are not yet known. Repository branch protection must be configured from verified GitHub identities when those external inputs exist.
+- The confirmed personal GitHub CODEOWNERS identity is `@losemymind`; no CODEOWNERS rule or host-side branch protection was added implicitly. Future GitHub Teams are still unknown, and repository enforcement must be configured explicitly from verified identities.
 
 Verification:
 

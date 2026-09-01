@@ -2,7 +2,7 @@
 
 `ownership.json` contains both the current solo model and the future team model. Application and deployment code refer to stable role names; this file maps those roles to identities. `active_mode` is the only mode selector.
 
-The current solo mode maps all five roles to `personal_libo`, displayed as `LIBO`, with the user-supplied opaque subject `github:losemymind.libo@gmail.com`. Because that subject is email-shaped rather than a normal GitHub `@login`, it is not emitted as a CODEOWNERS entry. Replace it with the actual GitHub login before adding personal CODEOWNERS enforcement.
+The current solo mode maps all five roles to `personal_libo`, displayed as `LIBO`, with the user-confirmed GitHub subject `github:losemymind`. Its corresponding GitHub CODEOWNERS identity is `@losemymind`. CODEOWNERS and branch-protection enforcement remain repository-host settings and should be enabled explicitly rather than inferred from this application governance file.
 
 Solo mode is deliberately `self_attested`, records risk acceptance `PERSONAL-1`, and is never Phase 1 G1 eligible. This permits personal technical ownership, release self-review and deployment work without misrepresenting them as independent acceptance.
 

@@ -37,8 +37,8 @@ test('control-plane approval contract cannot present the repository template as 
   assert.equal(approvalExample.status, 'pending');
   assert.equal(approvalExample.governance_mode, 'solo');
   assert.equal(approvalExample.assurance_level, 'self_attested');
-  assert.equal(approvalExample.technical_owner, 'github:losemymind.libo@gmail.com');
-  assert.equal(approvalExample.approved_by, 'github:losemymind.libo@gmail.com');
+  assert.equal(approvalExample.technical_owner, 'github:losemymind');
+  assert.equal(approvalExample.approved_by, 'github:losemymind');
   assert.equal(approvalExample.risk_acceptance_id, 'PERSONAL-1');
   assert.match(approvalExample.image_reference, /^registry\.invalid\//);
   assert.match(approvalExample.image_reference, /@sha256:0{64}$/);

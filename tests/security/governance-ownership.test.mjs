@@ -15,7 +15,7 @@ test('solo governance resolves every active role to LIBO without claiming indepe
   for (const identity of Object.values(resolved.roles)) {
     assert.equal(identity.identity_id, 'personal_libo');
     assert.equal(identity.display_name, 'LIBO');
-    assert.equal(identity.principal, 'github:losemymind.libo@gmail.com');
+    assert.equal(identity.principal, 'github:losemymind');
   }
 });
 
