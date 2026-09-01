@@ -22,6 +22,8 @@ await import('../services/index-coordinator/src/relation-persistence.ts');
 await import('../services/index-coordinator/src/chunk-persistence.ts');
 await import('../services/index-coordinator/src/embedding-persistence.ts');
 await import('../services/index-coordinator/src/generation-publication.ts');
+await import('../services/index-coordinator/src/job-lease.ts');
+await import('../services/index-coordinator/src/job-http.ts');
 await import('../services/retrieval/src/hybrid-ranking.ts');
 await import('../services/retrieval/src/retrieval-store.ts');
 await import('../services/retrieval/src/rerank.ts');

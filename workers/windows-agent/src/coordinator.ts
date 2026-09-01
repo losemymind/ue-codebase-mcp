@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   type AgentAuth,
   type AgentEventRequest,
@@ -28,6 +29,7 @@ interface ReferenceJob {
   availableAt: number;
   leaseAgentId?: string;
   leaseExpiresAt?: number;
+  leaseToken?: string;
   nextEventSequence: number;
   events: AgentEventRequest[];
   completion?: CompletionManifest;
@@ -60,7 +62,8 @@ export class LeaseCoordinator implements AgentTransport {
   }
 
   #authorize(auth: AgentAuth): void {
-    if (typeof auth.token !== 'string' || auth.token.length < 16 || auth.token.length > 8192) throw new Error('agent authentication rejected');
+    if (typeof auth.token !== 'string' || auth.token.length < 16 || auth.token.length > 8192
+        || !/^[A-Za-z0-9._~-]+$/.test(auth.token)) throw new Error('agent authentication rejected');
   }
 
   enqueue(payload: unknown, options: { max_attempts?: number } = {}): string {
@@ -89,6 +92,7 @@ export class LeaseCoordinator implements AgentTransport {
       if (job.status !== 'running' || job.leaseExpiresAt === undefined || job.leaseExpiresAt > now) continue;
       job.leaseAgentId = undefined;
       job.leaseExpiresAt = undefined;
+      job.leaseToken = undefined;
       job.status = job.attempt < job.maxAttempts ? 'queued' : 'failed';
       job.availableAt = now;
       recovered += 1;
@@ -111,7 +115,7 @@ export class LeaseCoordinator implements AgentTransport {
 
   async register(request: RegisterAgentRequest, auth: AgentAuth): Promise<RegisterAgentResponse> {
     this.#authorize(auth);
-    if (request.schema !== 'ue-codebase-mcp/agent-register' || request.version !== 1 || request.ue_version !== '5.6' || request.vcs.length !== 1 || request.vcs[0] !== 'svn') {
+    if (request.schema !== 'ue-codebase-mcp/agent-register' || request.version !== 2 || request.ue_version !== '5.6' || request.vcs.length !== 1 || request.vcs[0] !== 'svn') {
       throw new Error('agent registration contract rejected');
     }
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(request.agent_id) || !/^\d+\.\d+\.\d+$/.test(request.agent_version)) throw new Error('agent identity rejected');
@@ -126,7 +130,7 @@ export class LeaseCoordinator implements AgentTransport {
   async claim(request: ClaimJobsRequest, auth: AgentAuth): Promise<ClaimedJob | null> {
     this.#authorize(auth);
     if (!this.#agents.has(request.agent_id)) throw new Error('agent must register before claiming work');
-    if (request.schema !== 'ue-codebase-mcp/job-claim' || request.version !== 1 || request.supported_kinds.length !== 1 || request.supported_kinds[0] !== 'reindex') {
+    if (request.schema !== 'ue-codebase-mcp/job-claim' || request.version !== 2 || request.supported_kinds.length !== 1 || request.supported_kinds[0] !== 'reindex') {
       throw new Error('claim contract rejected');
     }
     this.recoverExpiredLeases();
@@ -136,12 +140,14 @@ export class LeaseCoordinator implements AgentTransport {
     job.status = 'running';
     job.attempt += 1;
     job.leaseAgentId = request.agent_id;
+    job.leaseToken = randomUUID();
     job.leaseExpiresAt = now + this.#leaseDurationMs;
     return structuredClone({
       lease: {
         job_id: job.id,
         agent_id: request.agent_id,
         attempt: job.attempt,
+        lease_token: job.leaseToken,
         lease_expires_at: new Date(job.leaseExpiresAt).toISOString(),
       },
       payload: job.payload,
@@ -149,9 +155,10 @@ export class LeaseCoordinator implements AgentTransport {
     });
   }
 
-  #activeLease(request: { job_id: string; agent_id: string; attempt: number }): ReferenceJob | undefined {
+  #activeLease(request: { job_id: string; agent_id: string; attempt: number; lease_token: string }): ReferenceJob | undefined {
     const job = this.#jobs.get(request.job_id);
-    if (!job || job.status !== 'running' || job.leaseAgentId !== request.agent_id || job.attempt !== request.attempt) return undefined;
+    if (!job || job.status !== 'running' || job.leaseAgentId !== request.agent_id || job.attempt !== request.attempt
+        || job.leaseToken !== request.lease_token) return undefined;
     if (job.leaseExpiresAt === undefined || job.leaseExpiresAt <= this.#clock.now().getTime()) return undefined;
     return job;
   }
@@ -202,6 +209,7 @@ export class LeaseCoordinator implements AgentTransport {
     active.completedBy = { agentId: request.agent_id, attempt: request.attempt };
     active.leaseAgentId = undefined;
     active.leaseExpiresAt = undefined;
+    active.leaseToken = undefined;
     return { accepted: true, disposition: 'accepted' };
   }
 
@@ -212,6 +220,7 @@ export class LeaseCoordinator implements AgentTransport {
     if (!['DEPENDENCY_UNAVAILABLE', 'INVALID_SOURCE_INPUT', 'RESOURCE_LIMIT', 'UNHANDLED_AGENT_FAILURE'].includes(request.error_code)) throw new Error('failure code rejected');
     job.leaseAgentId = undefined;
     job.leaseExpiresAt = undefined;
+    job.leaseToken = undefined;
     if (request.retryable && job.attempt < job.maxAttempts) {
       job.status = 'queued';
       job.availableAt = this.#clock.now().getTime() + this.#retryDelayMs;

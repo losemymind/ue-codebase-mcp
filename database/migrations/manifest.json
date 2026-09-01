@@ -36,6 +36,12 @@
       "name": "p1_14_generation_publication",
       "up": "0006_p1_14_generation_publication.up.sql",
       "down": "0006_p1_14_generation_publication.down.sql"
+    },
+    {
+      "version": 7,
+      "name": "p1_16_durable_job_leases",
+      "up": "0007_p1_16_durable_job_leases.up.sql",
+      "down": "0007_p1_16_durable_job_leases.down.sql"
     }
   ]
 }

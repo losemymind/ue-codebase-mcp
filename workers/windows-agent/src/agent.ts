@@ -23,6 +23,7 @@ export interface JobExecutionContext {
     fields?: { phase?: string; progress_percent?: number; item_count?: number };
   }): Promise<void>;
   now(): Date;
+  readonly signal: AbortSignal;
 }
 
 export type ReindexJobHandler = (payload: ReindexJobPayload, context: JobExecutionContext) => Promise<CompletionManifest>;
@@ -128,7 +129,7 @@ export class WindowsAgent {
   async register(): Promise<void> {
     const response = await this.#transport.register({
       schema: 'ue-codebase-mcp/agent-register',
-      version: 1,
+      version: 2,
       agent_id: this.#config.agent_id,
       agent_version: this.#config.agent_version,
       ue_version: '5.6',
@@ -143,7 +144,7 @@ export class WindowsAgent {
     if (!this.#registered) await this.register();
     const claimedValue = await this.#transport.claim({
       schema: 'ue-codebase-mcp/job-claim',
-      version: 1,
+      version: 2,
       agent_id: this.#config.agent_id,
       supported_kinds: ['reindex'],
       wait_ms: this.#config.claim_wait_ms,
@@ -157,12 +158,16 @@ export class WindowsAgent {
   async #execute(initialLease: JobLease, payload: AgentJobPayload, initialSequence: number): Promise<AgentIterationResult> {
     let lease = initialLease;
     let sequence = initialSequence;
+    let latestProgress = 0;
+    let latestResources = Object.freeze({ memory_mb: 0, cpu_percent: 0 });
 
     const heartbeat = async (progressPercent: number, resources = { memory_mb: 0, cpu_percent: 0 }): Promise<void> => {
+      latestProgress = validProgress(progressPercent);
+      latestResources = validResources(resources);
       const request: HeartbeatRequest = {
         ...lease,
-        progress_percent: validProgress(progressPercent),
-        resources: validResources(resources),
+        progress_percent: latestProgress,
+        resources: latestResources,
       };
       const response = await this.#transport.heartbeat(request, await this.#auth());
       if (!response.accepted) throw new LeaseLostError();
@@ -189,11 +194,26 @@ export class WindowsAgent {
     try {
       await heartbeat(0);
       const handler = this.#handlers[payload.kind];
-      const result = validateCompletionManifest(await handler(payload, {
-        heartbeat,
-        event,
-        now: () => this.#clock.now(),
-      }));
+      const controller = new AbortController();
+      const watchdog = (async (): Promise<never> => {
+        while (!controller.signal.aborted) {
+          await this.#clock.sleep(this.#config.heartbeat_interval_ms, controller.signal);
+          if (controller.signal.aborted) break;
+          await heartbeat(latestProgress, latestResources);
+        }
+        throw new LeaseLostError();
+      })();
+      let resultValue: CompletionManifest;
+      try {
+        resultValue = await Promise.race([
+          handler(payload, { heartbeat, event, now: () => this.#clock.now(), signal: controller.signal }),
+          watchdog,
+        ]);
+      } finally {
+        controller.abort();
+        await watchdog.catch(() => undefined);
+      }
+      const result = validateCompletionManifest(resultValue);
       if (result.revision_set_hash !== payload.revision_set.hash) throw new AgentJobError('INVALID_SOURCE_INPUT', false);
       await heartbeat(100);
       const completion = await this.#transport.complete({ ...lease, result }, await this.#auth());
@@ -208,15 +228,16 @@ export class WindowsAgent {
         error_code: classified.errorCode,
         retryable: classified.retryable,
         diagnostic: diagnosticByCode[classified.errorCode],
-      }, await this.#auth());
-      return failure.accepted ? 'failed' : 'lease_lost';
+      }, await this.#auth()).catch(() => undefined);
+      return failure?.accepted ? 'failed' : 'lease_lost';
     }
   }
 
   async run(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
-      const result = await this.runOnce();
-      if (result === 'idle') await this.#clock.sleep(this.#config.idle_delay_ms, signal);
+      let result: AgentIterationResult = 'idle';
+      try { result = await this.runOnce(); } catch { this.#registered = false; }
+      if (result === 'idle' && !signal.aborted) await this.#clock.sleep(this.#config.idle_delay_ms, signal);
     }
   }
 }

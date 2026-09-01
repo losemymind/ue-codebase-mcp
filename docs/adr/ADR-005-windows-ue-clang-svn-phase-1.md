@@ -17,6 +17,8 @@ The private Unreal Engine Fork and game project require the real UE build enviro
 - Phase 1 repository acquisition supports SVN only, using read-only credentials and pinned revision sets across Engine and project repositories.
 - Treat SVN content, filenames, compile commands and parser inputs as untrusted. Constrain canonical paths to isolated per-job workspaces, bound resources and return versioned hash-bound manifests.
 - The Agent claims typed leased jobs and never accepts a user-provided shell command, executable, arbitrary argument list or environment override.
+- A watchdog heartbeats independently of job-handler progress. Lease loss aborts a cooperative execution signal, and an expired/superseded attempt cannot report events, failure or completion.
+- Windows Service installation and update are fixed-name operations bound to approved executable/configuration SHA-256 values, confined below one install root, reject reparse-point inputs and accept only the service virtual account or a strictly named gMSA.
 
 Git and Perforce are outside Phase 1 and remain in the post-G3 extension phase. Their future provider SPI must not weaken SVN regression behavior, evidence semantics or the MCP read-only boundary.
 

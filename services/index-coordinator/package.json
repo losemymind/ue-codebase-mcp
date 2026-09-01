@@ -7,7 +7,9 @@
   "exports": {
     ".": "./src/workspace.ts",
     "./symbol-persistence": "./src/symbol-persistence.ts",
-    "./generation-publication": "./src/generation-publication.ts"
+    "./generation-publication": "./src/generation-publication.ts",
+    "./job-lease": "./src/job-lease.ts",
+    "./job-http": "./src/job-http.ts"
   },
   "engines": {
     "node": "24.18.0"

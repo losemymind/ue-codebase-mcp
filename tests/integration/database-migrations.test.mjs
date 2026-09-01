@@ -49,7 +49,7 @@ function tableNames(sql, operation) {
 
 test('migration manifest is contiguous and every migration is transactional', async () => {
   assert.equal(manifest.schema, 'ue_mcp');
-  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5, 6, 7]);
 
   for (const migration of manifest.migrations) {
     for (const direction of ['up', 'down']) {
@@ -127,6 +127,32 @@ test('P1-14 migration binds validated publication evidence, fencing, audit histo
   assert.match(up, /VALUES \(6, 'p1_14_generation_publication'/);
   assert.match(down, /version = 6 AND name = 'p1_14_generation_publication'/);
   assert.match(down, /DROP TABLE ue_mcp\.generation_publication_events/);
+});
+
+test('P1-16 migration binds durable job payloads, availability, fencing, events and terminal evidence', async () => {
+  const up = await readFile(path.join(migrationRoot, '0007_p1_16_durable_job_leases.up.sql'), 'utf8');
+  const down = await readFile(path.join(migrationRoot, '0007_p1_16_durable_job_leases.down.sql'), 'utf8');
+  for (const field of ['agent_payload', 'available_at', 'next_event_sequence', 'lease_token', 'completion_manifest',
+    'completion_agent_id', 'completion_attempt', 'last_error_code', 'last_error_retryable', 'last_failure_agent_id',
+    'last_failure_attempt']) {
+    assert.match(up, new RegExp(`ADD COLUMN ${field}\\b`));
+    assert.match(down, new RegExp(`DROP COLUMN ${field}\\b`));
+  }
+  assert.match(up, /jobs_lease_token_state_check/);
+  assert.match(up, /\(status = 'running'\) = \(lease_token IS NOT NULL\)/);
+  assert.match(up, /VALIDATE CONSTRAINT jobs_lease_token_state_check/);
+  assert.match(up, /max\(event\.sequence\) \+ 1/);
+  assert.match(up, /octet_length\(agent_payload::text\) <= 1048576/);
+  assert.match(up, /octet_length\(completion_manifest::text\) <= 16384/);
+  assert.match(up, /jobs_completion_manifest_state_check/);
+  assert.match(up, /jobs_success_requires_completion_check/);
+  assert.match(up, /jobs_error_state_check/);
+  assert.match(up, /jobs_available_claim_idx/);
+  assert.match(up, /CREATE UNIQUE INDEX jobs_one_running_lease_per_agent_unique/);
+  assert.match(up, /ON ue_mcp\.jobs \(lease_agent_id\) WHERE status = 'running'/);
+  assert.match(up, /WHERE status = 'queued' AND agent_payload IS NOT NULL/);
+  assert.match(up, /VALUES \(7, 'p1_16_durable_job_leases'/);
+  assert.match(down, /version = 7 AND name = 'p1_16_durable_job_leases'/);
 });
 
 test('core migration covers phase 1 sections 5.1 through 5.3 and 5.5 only', async () => {

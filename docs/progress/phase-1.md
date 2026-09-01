@@ -958,3 +958,47 @@ Known limitations and next work:
 - No live high-concurrency/rate-limit, reverse-proxy smuggling, slow-body, timeout cancellation, audit outage, P95/P99 or production response-size exercise has run. All earlier database, ACL, provider, corpus, revision-binding, object-store and G1 governance blockers remain explicit. Phase 2 remains frozen.
 
 Next work: keep the single `codex/phase-1-foundation` line. Continue with P1-16 Windows Agent/internal lease integration while scheduling the missing P1-15 backend/OAuth/Inspector acceptance work; do not create another development branch or enter Phase 2.
+
+## P1-16 increment — durable Windows Agent leases and service lifecycle boundary
+
+Status: the version-2 internal Agent protocol, PostgreSQL durable lease coordinator, authenticated internal HTTP routes, independent heartbeat watchdog and hash-bound Windows Service management baseline are technically implemented on 2026-09-01. Live PostgreSQL concurrency, a signed packaged Agent, real handler/resource enforcement and fixed-device service rehearsal remain pending, so P1-16 is not formally accepted.
+
+Deliverables:
+
+- Internal Agent registration and claim messages are upgraded to protocol version 2 while reindex job/result schemas remain version 1. Every lease now contains job, Agent, attempt, random UUID fencing token and expiry; old attempts or tokens cannot heartbeat, append events, fail or complete.
+- Migration `0007_p1_16_durable_job_leases` adds bounded typed Agent payloads, availability time, durable next-event sequence, lease token, bounded completion manifest, completion/failure attribution and stable last-failure evidence. Existing event sequences are backfilled from `job_events`; migrated running rows receive new tokens and old workers therefore fail closed.
+- A partial unique index permits at most one running lease per Agent. Repeated claim after an ambiguous response returns that Agent's existing unexpired lease rather than consuming another queued job.
+- Claims run in short fixed parameterized transactions. Expired leases are recovered in batches of at most 1,000 with `FOR UPDATE SKIP LOCKED`; retryable jobs return to the queue after a bounded delay, exhausted jobs become terminal, and the next claim increments the attempt.
+- Candidate selection requires an online registered Agent with all Phase 1 indexing capabilities, a validated versioned reindex payload, an available non-cancelled job and no caller-supplied SQL, executable, command, arguments, environment or workspace path.
+- Heartbeat, ordered event, completion and failure transitions are conditional on the exact live attempt/token. Event sequence replay is idempotent only for identical redacted fields. Completion is bound to the assigned revision-set hash and records the exact Agent/attempt/manifest; exact completion and failure replay return `already_applied`.
+- The internal HTTP endpoint exposes only the six planned POST routes for register, claim, heartbeat, events, complete and fail. It requires an allowlisted Host, rejects browser Origin requests, authenticates every request with a service bearer carrying `agent:work`, binds path and body job IDs, enforces JSON/media/body/deadline bounds and returns content-safe status classes.
+- The Windows Agent validates header-safe short-lived tokens and runs an automatic heartbeat watchdog independently of handler progress. Lease loss aborts a cooperative signal; reporting failure during a coordinator outage safely falls back to lease expiry/recovery, and the service loop re-registers after transient transport failure.
+- Completion generation IDs are UUIDs and artifact URIs reject empty, `.` and `..` path segments. Manifest/revision hashes remain mandatory before a lease can complete.
+- Windows Service install/update accepts only the fixed `UECodebaseMcpAgent` name, verifies approved executable and configuration SHA-256 values, confines both below the install root, rejects reparse points, accepts only the virtual account or a strictly named gMSA and configures two bounded delayed restarts instead of an unlimited crash loop.
+- The destructive migration rehearsal was corrected to upgrade, test, independently roll back versions 7 and 6, continue the older rollback chain and re-upgrade to version 7. Static live constraints now reject a queued lease token and succeeded job without a completion manifest.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/job-lease.test.mjs tests/unit/windows-agent.test.mjs tests/compatibility/internal-job-http.test.mjs tests/security/windows-service.test.mjs tests/integration/database-migrations.test.mjs
+powershell -NoProfile -Command "[void][scriptblock]::Create((Get-Content -LiteralPath 'deploy/windows-service/manage-agent-service.ps1' -Raw))"
+npm run ci
+npm run release:check
+```
+
+- Focused migration/lease/Agent/HTTP/service coverage passed 29/29. It covers ambiguous claim replay, bounded crash recovery, attempt/token fencing, independent heartbeat loss, capability checks, event monotonicity, completion/failure idempotency, revision mismatch, malformed durable payload rollback, stable database errors, authentication/media/Host/Origin/path negatives and service hash/account/path/recovery controls.
+- The Windows Service script parsed successfully in Windows PowerShell without changing service state.
+- Full repository CI passed 205/205. Formatting, security-boundary lint, build, permissive-license audit and CycloneDX generation with the existing declared native dependency passed. Release policy passed for `0.1.0`.
+
+Known limitations and next work:
+
+- The database layer is a fixed transactional port, not an approved PostgreSQL driver/pool. No live row-lock, `SKIP LOCKED`, partial unique-index, ambiguous commit, deadlock, failover or multi-Agent concurrency test has run because `psql` remains unavailable.
+- Existing jobs are intentionally not assigned fabricated Agent payloads. A reviewed control-plane enqueue adapter must validate and persist `agent_payload` together with the immutable revision set; legacy succeeded jobs require inventory/rebuild before the `NOT VALID` success-evidence constraint can be validated.
+- The pure internal HTTP endpoint is not yet bound to a production listener, reverse proxy, mTLS/network policy or service-role token issuer. The bearer adapter proves the `agent:work` boundary but not deployment identity isolation or rotation.
+- Reindex handlers remain injected. The real SVN workspace, compile-database, Clang/module indexing, persistence and generation-publication sequence is not assembled into one production handler, and queue completion deliberately does not activate a generation.
+- Timeout, memory and CPU policy values are validated and delivered but are not yet enforced by Windows Job Objects/process-tree termination. Handler cancellation is cooperative; every native subprocess adapter must bind the abort signal and prove that lease loss stops all descendants before production use.
+- No signed `ue-codebase-mcp-agent.exe` was produced or installed. The service script verifies staged hashes and configuration but does not provide atomic package replacement/rollback, ACL provisioning, start/ready checks or a non-developer fixed-device rehearsal; these remain P1-18 deployment work.
+- No long-poll saturation, retry jitter, per-project fairness/quota, disk-pressure, host reboot, SCM restart, token rotation or P95/P99 exercise has run. P1-17 observability is still required for lease age, retry rate, starvation and Agent health.
+- All earlier database, ACL, provider, corpus, revision-binding, object-store, MCP Inspector and G1 governance blockers remain explicit. Phase 2 remains frozen.
+
+Next work: keep the single `codex/phase-1-foundation` line and continue with P1-17 correlation IDs, redacted logging, metrics, traces and audit coverage over MCP and Agent/job paths. In parallel acceptance work, schedule live PostgreSQL multi-Agent fault injection and signed fixed-device service rehearsal; do not enter Phase 2.

@@ -154,6 +154,28 @@ BEGIN
     WHEN check_violation THEN NULL;
   END;
 
+  BEGIN
+    INSERT INTO jobs (
+      project_id, type, requester_type, requester_id, revision_set, status, lease_token
+    ) VALUES (
+      project_id, 'reindex', 'user', user_id::text, '{}'::jsonb, 'queued', gen_random_uuid()
+    );
+    RAISE EXCEPTION 'queued job with a lease token was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO jobs (
+      project_id, type, requester_type, requester_id, revision_set, status, finished_at
+    ) VALUES (
+      project_id, 'reindex', 'user', user_id::text, '{}'::jsonb, 'succeeded', clock_timestamp()
+    );
+    RAISE EXCEPTION 'succeeded job without a completion manifest was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
   UPDATE projects SET name = 'Migration Test Updated' WHERE id = project_id;
   IF NOT EXISTS (
     SELECT 1 FROM projects

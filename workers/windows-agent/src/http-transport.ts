@@ -27,6 +27,9 @@ function fencedResponse(value: unknown): FencedOperationResponse {
   if (typeof object.accepted !== 'boolean' || !['accepted', 'already_applied', 'lease_lost', 'sequence_conflict'].includes(object.disposition as string)) {
     throw new TypeError('fenced operation response is invalid');
   }
+  if (object.accepted !== ['accepted', 'already_applied'].includes(object.disposition as string)) {
+    throw new TypeError('fenced operation acceptance is inconsistent');
+  }
   if (object.lease_expires_at !== undefined && (typeof object.lease_expires_at !== 'string' || Number.isNaN(Date.parse(object.lease_expires_at)))) {
     throw new TypeError('fenced operation lease expiry is invalid');
   }
@@ -51,7 +54,8 @@ export class HttpAgentTransport implements AgentTransport {
   }
 
   async #post(pathname: string, body: unknown, auth: AgentAuth): Promise<unknown> {
-    if (typeof auth.token !== 'string' || auth.token.length < 16 || auth.token.length > 8192) throw new TypeError('agent authentication is invalid');
+    if (typeof auth.token !== 'string' || auth.token.length < 16 || auth.token.length > 8192
+        || !/^[A-Za-z0-9._~-]+$/.test(auth.token)) throw new TypeError('agent authentication is invalid');
     const url = new URL(pathname, this.#endpoint);
     if (url.origin !== this.#endpoint.origin) throw new TypeError('internal API path escaped the configured coordinator origin');
     const response = await fetch(url, {
@@ -66,6 +70,9 @@ export class HttpAgentTransport implements AgentTransport {
       body: JSON.stringify(body),
     });
     if (response.status < 200 || response.status >= 300) throw new Error(`coordinator request failed with HTTP ${response.status}`);
+    if (response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() !== 'application/json') {
+      throw new Error('coordinator response content type is invalid');
+    }
     const contentLength = response.headers.get('content-length');
     if (contentLength !== null && Number(contentLength) > MAX_RESPONSE_BYTES) throw new Error('coordinator response exceeded the configured limit');
     const text = await response.text();

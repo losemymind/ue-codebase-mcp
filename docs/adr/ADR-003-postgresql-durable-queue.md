@@ -13,12 +13,14 @@ Index work must survive API/Agent crashes, bind execution to an immutable revisi
 Use a PostgreSQL durable queue stored with job and generation metadata.
 
 - Claim ready work in a short transaction using `SELECT ... FOR UPDATE SKIP LOCKED`.
-- Each claim creates an attempt-scoped lease with owner and expiry. Heartbeats extend only the matching active attempt.
+- Each claim creates an attempt-scoped lease with owner, random UUID fencing token and expiry. Heartbeats extend only the exact matching active attempt/token, and a partial unique index permits at most one running lease per Agent.
+- Repeated claim after an ambiguous network response returns the Agent's existing unexpired lease instead of assigning another job. Expired leases are recovered in bounded `FOR UPDATE SKIP LOCKED` batches before new work is selected.
 - Completion/failure/cancellation transitions are conditional and idempotent; an expired or superseded attempt cannot publish.
 - A retry retains the pinned revision set and increments attempt metadata. Backoff, maximum attempts and terminal error class are durable.
 - Job events have monotonic per-job sequence numbers and redacted bounded payloads.
 - Generation activation is a separate validated transaction; queue completion alone never makes staging data queryable.
 - Payloads are typed and versioned. They contain IDs and secret references, never credentials, shell commands or arbitrary environment/argument strings.
+- Agent registration/lease transport uses protocol version 2; the independently versioned reindex payload and result schemas remain version 1.
 
 ## Consequences
 
