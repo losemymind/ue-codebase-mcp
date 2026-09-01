@@ -36,12 +36,18 @@ test('Compose isolates edge, data, and observability and mounts file secrets', (
 
 test('TLS edge is bounded, content-safe, and has no public metrics route', () => {
   assert.match(nginx, /access_log off;/);
+  assert.match(nginx, /error_log \/dev\/stderr crit;/);
   assert.match(nginx, /ssl_protocols TLSv1\.2 TLSv1\.3;/);
   assert.match(nginx, /limit_conn_zone/);
   assert.match(nginx, /limit_req_zone/);
   assert.match(nginx, /location = \/mcp \{[\s\S]+?client_max_body_size 1m;[\s\S]+?proxy_read_timeout 30s;/);
   assert.match(nginx, /location = \/health\/live/);
   assert.match(nginx, /location = \/health\/ready/);
+  assert.match(nginx, /map "\$content_length:\$http_transfer_encoding" \$request_has_body/);
+  assert.equal((nginx.match(/if \(\$request_has_body\) \{ return 413; \}/g) ?? []).length, 3);
+  assert.doesNotMatch(nginx, /client_max_body_size 0;/);
+  assert.match(nginx, /client_header_buffer_size 1k;/);
+  assert.match(nginx, /large_client_header_buffers 2 8k;/);
   assert.match(nginx, /location = \/metrics \{\s*return 404;\s*\}/);
   assert.doesNotMatch(nginx, /\$request_uri|\$request_body|\$http_authorization/);
   assert.doesNotMatch(compose, /3000:3000|8081:8081|9090:9090/);
