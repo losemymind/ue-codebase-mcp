@@ -1044,3 +1044,38 @@ Known limitations and next work:
 - All earlier database, ACL, provider, corpus, revision-binding, object-store, MCP Inspector, signed Agent and G1 governance blockers remain explicit. Phase 2 remains frozen.
 
 Next work: keep the single `codex/phase-1-foundation` line and continue with P1-18 container/Windows Service deployment baseline, while carrying the recorded P1-17 live PostgreSQL, collector/dashboard and fault-injection acceptance work. Do not enter Phase 2.
+
+## P1-18 handoff checkpoint — internal operations HTTP boundary
+
+Status: P1-18 is in progress, not complete or accepted. Before the task handoff on 2026-09-01, the internal liveness, readiness and protected metrics HTTP boundary was completed as one coherent checkpoint. Compose, TLS reverse proxy, approved control-plane image assembly, Windows Service deployment/rollback verification and a clean fixed-device rehearsal remain for the successor task.
+
+Completed checkpoint:
+
+- `GET /health/live` reports process liveness only and cannot claim dependency readiness.
+- `GET /health/ready` calls an injected bounded readiness probe and reduces false, timeout and exceptions to the same content-safe `503 not_ready` response without component or database detail.
+- `GET /metrics` requires a distinct injected bearer authorizer intended for `metrics:read`; missing, rejected and unavailable authorization paths fail closed. It exposes only the P1-17 Prometheus registry.
+- The operations boundary has an exact three-path GET-only surface, rejects bodies, hostile Hosts, browser Origins and malformed correlation/trace carriers, and returns correlation/trace response headers plus security/cache headers.
+- Operations telemetry uses the existing fixed component/operation/outcome metric labels. Health or metrics payloads, credentials and dependency details never become telemetry attributes.
+
+Verification:
+
+```powershell
+node --test tests/compatibility/operations-http.test.mjs tests/unit/observability.test.mjs tests/compatibility/mcp-protocol.test.mjs tests/compatibility/streamable-http.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused compatibility and observability coverage passed 21/21.
+- Full repository CI passed 219/219, including formatting, lint, build, license audit and SBOM generation.
+- Docker/Compose and NGINX are not installed on this workstation. No image build, Compose validation, TLS handshake, proxy behavior or fixed-device installation was executed.
+
+Successor task scope, in order:
+
+1. Keep the existing `codex/phase-1-foundation` branch and do not create a worktree or another development branch.
+2. Add a digest-required Compose topology without `latest`, with separate edge/data/observability networks and file-mounted secrets. Require an externally approved control-plane image rather than fabricating the still-missing production database/retrieval assembly.
+3. Add an exact-version TLS reverse-proxy configuration with request/connection limits, one MiB MCP body cap, bounded timeouts, safe headers, no payload-bearing access log and no public `/metrics` route.
+4. Add a non-mutating deployment preflight that checks Docker/Compose availability, image digest pins, certificate/key and secret-file inputs, reparse points and `docker compose config` before any `up` action.
+5. Extend the fixed-name Windows Service workflow with signed package verification, start/readiness verification, protected rollback evidence and an explicit approved-previous-release rollback path; preserve the existing hash/path/account/recovery constraints.
+6. Add static negative tests and, only on a suitably provisioned fixed device, run the clean installation, TLS, health, restart, update and rollback rehearsal. Record missing production control-plane assembly and device/TLS/account inputs as acceptance blockers, not successes.
+
+Do not mark P1-18 complete until the Compose, reverse-proxy and Windows Service deliverables are committed and the clean fixed-device rehearsal has actual evidence. Do not enter Phase 2.

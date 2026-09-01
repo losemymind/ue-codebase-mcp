@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/server.ts",
     "./cursor": "./src/cursor.ts",
+    "./operations-http": "./src/operations-http.ts",
     "./streamable-http": "./src/streamable-http.ts"
   },
   "engines": {

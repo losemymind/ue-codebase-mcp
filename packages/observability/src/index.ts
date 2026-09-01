@@ -92,8 +92,8 @@ const ZERO_SPAN = '0000000000000000';
 const TELEMETRY_NAME = /^[a-z][a-z0-9_.-]{0,63}$/;
 const TELEMETRY_COMPONENTS = new Set(['index-coordinator', 'mcp-http', 'mcp-server', 'windows-agent']);
 const TELEMETRY_OPERATIONS = new Set([
-  'agent-register', 'iteration', 'job-claim', 'job-complete', 'job-events', 'job-fail', 'job-heartbeat',
-  'request', 'tool-call', 'unknown',
+  'agent-register', 'health-live', 'health-ready', 'iteration', 'job-claim', 'job-complete', 'job-events',
+  'job-fail', 'job-heartbeat', 'metrics', 'request', 'tool-call', 'unknown',
 ]);
 const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/;
 const HEX_HASH = /^[a-f0-9]{64}$/;

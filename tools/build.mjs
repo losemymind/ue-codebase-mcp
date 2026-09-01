@@ -14,6 +14,7 @@ await import('../packages/contracts/src/read-only-tools.ts');
 await import('../packages/observability/src/index.ts');
 await import('../apps/mcp-server/src/cursor.ts');
 await import('../apps/mcp-server/src/server.ts');
+await import('../apps/mcp-server/src/operations-http.ts');
 await import('../apps/mcp-server/src/streamable-http.ts');
 await import('../workers/svn-adapter/src/index.ts');
 await import('../workers/windows-agent/src/index.ts');
