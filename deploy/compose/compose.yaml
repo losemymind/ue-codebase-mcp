@@ -1,0 +1,186 @@
+name: ue-codebase-mcp
+
+services:
+  edge-proxy:
+    image: ${EDGE_PROXY_IMAGE:?set an approved exact-version image with a sha256 digest}
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=16m,mode=0750
+    ports:
+      - "${EDGE_BIND_ADDRESS:-127.0.0.1}:${EDGE_TLS_PORT:-443}:8443"
+    configs:
+      - source: edge_nginx_config
+        target: /etc/nginx/nginx.conf
+        mode: 0444
+    secrets:
+      - source: edge_tls_certificate
+        target: tls.crt
+        mode: 0444
+      - source: edge_tls_private_key
+        target: tls.key
+        mode: 0400
+    networks:
+      - edge
+    depends_on:
+      control-plane:
+        condition: service_healthy
+        restart: true
+
+  control-plane:
+    image: ${CONTROL_PLANE_IMAGE:?set the externally approved control-plane image with a sha256 digest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1770
+    environment:
+      NODE_ENV: production
+      UE_MCP_PUBLIC_LISTEN: 0.0.0.0:8080
+      UE_MCP_OPERATIONS_LISTEN: 0.0.0.0:8081
+      UE_MCP_DATABASE_DSN_FILE: /run/secrets/control_plane_database_dsn
+      UE_MCP_METRICS_TOKEN_FILE: /run/secrets/metrics_bearer_token
+    expose:
+      - "8080"
+      - "8081"
+    secrets:
+      - control_plane_database_dsn
+      - metrics_bearer_token
+    networks:
+      - edge
+      - data
+      - observability
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8081/health/ready').then(r=>{if(r.status!==200)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+
+  postgres:
+    image: ${POSTGRES_IMAGE:?set an approved exact-version image with a sha256 digest}
+    restart: unless-stopped
+    shm_size: 256m
+    environment:
+      POSTGRES_DB: ue_codebase_mcp
+      POSTGRES_USER: ue_codebase_mcp
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ue_codebase_mcp -d ue_codebase_mcp
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:?set an approved exact-version image with a sha256 digest}
+    restart: unless-stopped
+    read_only: true
+    user: "65534:65534"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle=false
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
+        mode: 0444
+    secrets:
+      - metrics_bearer_token
+    volumes:
+      - prometheus_data:/prometheus
+    networks:
+      - observability
+    depends_on:
+      control-plane:
+        condition: service_healthy
+        restart: true
+
+  grafana:
+    image: ${GRAFANA_IMAGE:?set an approved exact-version image with a sha256 digest}
+    restart: unless-stopped
+    user: "472:472"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    expose:
+      - "3000"
+    secrets:
+      - grafana_admin_password
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - observability
+
+configs:
+  edge_nginx_config:
+    file: ../reverse-proxy/nginx.conf
+  prometheus_config:
+    file: ../monitoring/prometheus.yml
+
+secrets:
+  edge_tls_certificate:
+    file: ${EDGE_TLS_CERTIFICATE_FILE:?set an approved PEM certificate file}
+  edge_tls_private_key:
+    file: ${EDGE_TLS_PRIVATE_KEY_FILE:?set its PEM private-key file}
+  control_plane_database_dsn:
+    file: ${CONTROL_PLANE_DATABASE_DSN_FILE:?set a file containing the database DSN}
+  metrics_bearer_token:
+    file: ${METRICS_BEARER_TOKEN_FILE:?set a file containing a metrics-read token}
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?set a file containing the PostgreSQL password}
+  grafana_admin_password:
+    file: ${GRAFANA_ADMIN_PASSWORD_FILE:?set a file containing the Grafana admin password}
+
+networks:
+  edge:
+    driver: bridge
+    internal: true
+  data:
+    driver: bridge
+    internal: true
+  observability:
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:

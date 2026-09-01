@@ -1079,3 +1079,38 @@ Successor task scope, in order:
 6. Add static negative tests and, only on a suitably provisioned fixed device, run the clean installation, TLS, health, restart, update and rollback rehearsal. Record missing production control-plane assembly and device/TLS/account inputs as acceptance blockers, not successes.
 
 Do not mark P1-18 complete until the Compose, reverse-proxy and Windows Service deliverables are committed and the clean fixed-device rehearsal has actual evidence. Do not enter Phase 2.
+
+## P1-18 deployment baseline checkpoint — static deliverables, acceptance still blocked
+
+Status: the digest-required Compose topology, exact-version TLS edge baseline, non-mutating deployment preflight and signed/readiness-verified Windows Service update/rollback workflow were technically implemented on 2026-09-01. Static negative coverage and repository CI pass, but Docker/Compose/NGINX and the required production/device inputs remain unavailable on this workstation. No container, proxy or Windows Service deployment was attempted, so P1-18 remains in progress and is not accepted.
+
+Deliverables:
+
+- `deploy/compose/compose.yaml` has no build path and requires every externally approved image as an exact tag plus `sha256` digest. The checked-in environment example uses `registry.invalid` and all-zero digests deliberately, so it cannot be treated as image approval or started accidentally. In particular, the repository still does not fabricate the missing production control-plane database/retrieval/ACL/audit/object-store assembly.
+- The topology publishes only the configurable TLS edge socket, bound to loopback by default. Edge, data and observability are separate internal networks; PostgreSQL, Prometheus, Grafana, the control-plane operations listener and `/metrics` have no host port. TLS material, database inputs, metrics authorization and administrative credentials are file-mounted secrets.
+- The Prometheus baseline uses its distinct bearer-token file to scrape the protected internal operations listener. The NGINX edge exposes only MCP POST, protected-resource metadata GET and liveness/readiness GET. It explicitly returns `404` for `/metrics`, disables access logging, preserves application Host validation, erases forwarding chains, and bounds connections, requests, headers, timeouts and the MCP body to one MiB.
+- `deploy/compose/preflight.ps1` is non-mutating. It checks Docker/Compose client availability, fully qualified regular-file inputs and their parent paths for reparse points, PEM markers, exact equality between separately approved TLS/secret inputs and environment bindings, the absence of build/latest references, rendered Compose validity and exact non-placeholder digest pins. It has no pull, build, create, start, restart, down or up action.
+- The fixed-name Windows Service workflow preserves install-root confinement, hashes, the virtual-account/gMSA boundary and the bounded recovery policy. Install and Update additionally require a valid Authenticode signature from an approved thumbprint, start the service and require exact `ready` from an HTTPS `/health/ready` endpoint within a bounded deadline.
+- Update must receive and verify a distinct approved previous release before changing service configuration. Failed new-release readiness triggers restoration and readiness verification of that approved previous release; `Rollback` exposes the same explicit path. Mutating attempts write bounded JSON evidence below the install root in a non-reparse directory whose inherited ACL is removed and restricted to LocalSystem and local Administrators. Evidence excludes configuration content, credentials, tokens and exception text.
+
+Verification commands and results:
+
+```powershell
+powershell -NoProfile -Command "$ErrorActionPreference = 'Stop'; [void][scriptblock]::Create((Get-Content -LiteralPath 'deploy/windows-service/manage-agent-service.ps1' -Raw)); [void][scriptblock]::Create((Get-Content -LiteralPath 'deploy/compose/preflight.ps1' -Raw))"
+node --test tests/security/deployment-baseline.test.mjs tests/security/windows-service.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Both PowerShell scripts parsed successfully without changing machine or service state. Focused deployment/service static negative coverage passed 8/8.
+- Full repository CI passed 225/225, including formatting, security-boundary lint, build, permissive-license audit and CycloneDX generation. Release policy passed for `0.1.0`.
+- `Get-Command` confirmed that Docker and NGINX are unavailable. Consequently `docker compose config`, image inspection/pull, NGINX configuration validation, TLS handshake, proxy routing/limits, protected Prometheus scraping and container health behavior were not executed. Static tests are not recorded as runtime deployment evidence.
+
+Acceptance blockers and next work:
+
+- An externally reviewed production control-plane image does not exist yet. It must assemble the real database pool/migrations, current ACL scope, retrieval/generation stores, audit sink, object storage, authenticated public/internal listeners and approved observability exporters before any deployment can be claimed.
+- Approved non-placeholder image digests, a trusted certificate/key/hostname, file-secret inputs, metrics credential, service account/host ACLs, a signed Agent package and an independently approved previous Agent release have not been supplied.
+- No suitably provisioned clean fixed device is available. Clean installation, TLS and Host/Origin negatives, liveness/readiness, protected metrics, restart/recovery, update failure, explicit rollback, reboot and evidence retention all remain to be rehearsed on that device.
+- The earlier live PostgreSQL, MCP Inspector, ACL/provider/corpus/revision/object-store, collector/dashboard, fault-injection and G1 governance blockers remain in force. P1-18 must not be marked complete until the fixed-device rehearsal produces actual reviewed evidence. Phase 2 remains frozen.
+
+Next work: keep the single `codex/phase-1-foundation` line. On a suitably provisioned fixed device, supply only approved immutable images, TLS/secrets, service identity and signed current/previous packages; run preflight before any deployment mutation, then capture the clean install, TLS, health, restart, update and rollback rehearsal. Do not manufacture missing control-plane or device evidence, push the branch, or enter Phase 2.
