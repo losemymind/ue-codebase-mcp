@@ -10,6 +10,10 @@ for (const file of ['VERSION', 'LICENSE_POLICY.md', 'SECURITY.md', 'THIRD_PARTY_
 const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 const { CONFIG_VERSION, loadConfigFile } = await import('../packages/config/src/index.ts');
 await import('../packages/auth/src/index.ts');
+await import('../packages/contracts/src/read-only-tools.ts');
+await import('../apps/mcp-server/src/cursor.ts');
+await import('../apps/mcp-server/src/server.ts');
+await import('../apps/mcp-server/src/streamable-http.ts');
 await import('../workers/svn-adapter/src/index.ts');
 await import('../workers/windows-agent/src/index.ts');
 await import('../services/index-coordinator/src/workspace.ts');
@@ -40,7 +44,7 @@ await mkdir(path.join(configPackageDist, 'src'), { recursive: true });
 await cp(path.join(root, 'packages', 'config', 'package.json'), path.join(configPackageDist, 'package.json'));
 await cp(path.join(root, 'packages', 'config', 'src', 'index.ts'), path.join(configPackageDist, 'src', 'index.ts'));
 await cp(path.join(root, 'configs'), path.join(dist, 'configs'), { recursive: true, force: true });
-for (const source of ['packages/auth', 'packages/provider-sdk', 'services/index-coordinator', 'services/retrieval', 'workers/clang-indexer', 'workers/svn-adapter', 'workers/windows-agent']) {
+for (const source of ['apps/mcp-server', 'packages/auth', 'packages/contracts', 'packages/provider-sdk', 'services/index-coordinator', 'services/retrieval', 'workers/clang-indexer', 'workers/svn-adapter', 'workers/windows-agent']) {
   await cp(path.join(root, source), path.join(dist, source), { recursive: true, force: true });
 }
 await cp(path.join(root, 'deploy', 'windows-service'), path.join(dist, 'deploy', 'windows-service'), { recursive: true, force: true });

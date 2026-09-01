@@ -17,6 +17,8 @@ Multiple MCP clients need a standard network interface, but the product is an in
 - Compute effective visibility as a fresh SVN authorization snapshot intersected with current MCP project/team/user ACL. Missing, stale, failed or indeterminate authorization is a denial.
 - Bound pagination, snippets, graph depth/width, response size and error detail. Evidence includes relative path, line range, SVN revision, index generation and uncertainty.
 - Audit actor, tool, scope and outcome without tokens, secrets, full source or raw request bodies.
+- Pin the initial implementation to stable MCP revision `2025-11-25`, retaining protocol negotiation compatibility with `2025-06-18` and `2025-03-26`. The Phase 1 HTTP server is stateless and does not issue `Mcp-Session-Id`; Streamable HTTP sessions and server-sent events are optional and can be added only with bounded lifecycle and resumption controls.
+- Require exact Host/Origin allowlists, RFC 9728 protected-resource metadata, the `mcp:read` scope, a caller-bound request rate limiter and one total request deadline at the HTTP boundary. Unsupported GET streams return `405`; the server does not emulate SSE.
 
 Later approved `request_reindex`, UBT and UAT operations change index/build/test state only. They accept administrator-defined preset IDs and typed bounded fields, cannot mutate version-controlled source, and do not weaken the permanent prohibitions above.
 

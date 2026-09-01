@@ -1,0 +1,13 @@
+{
+  "name": "@ue-codebase-mcp/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": "./src/read-only-tools.ts"
+  },
+  "engines": {
+    "node": "24.18.0"
+  }
+}

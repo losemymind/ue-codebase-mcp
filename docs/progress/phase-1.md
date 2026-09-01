@@ -920,3 +920,41 @@ Known limitations and next work:
 - No live PostgreSQL, real object-store, high-volume cascade, backup/GC race, P95/P99 or process-crash-between-GC-phases exercise has run. All earlier G1 and P1-09 through P1-13 acceptance blockers remain explicit. Phase 2 remains frozen.
 
 Next work: keep the single `codex/phase-1-foundation` line and proceed to P1-15 MCP protocol/read-only tools only as a technical increment. P1-15 may consume active-only retrieval and lifecycle contracts, but Phase 1 acceptance must remain blocked until the recorded database, ACL, provider, corpus, revision-binding and object-store evidence is complete. Do not enter Phase 2.
+
+## P1-15 increment — stable MCP protocol and read-only tool boundary
+
+Status: the stable MCP protocol core, closed read-only tool contracts, authenticated Streamable HTTP boundary and protocol compatibility tests are technically implemented on 2026-09-01. Production backend adapters, live OAuth/TLS/reverse-proxy integration and an external MCP Inspector run remain pending, so P1-15 is not formally accepted.
+
+Deliverables:
+
+- The protocol implementation negotiates stable MCP revisions `2025-11-25`, `2025-06-18` and `2025-03-26`, returns initialization instructions and advertises only the tools capability. It handles initialization, initialized/cancelled notifications, ping, paginated `tools/list` and `tools/call` through strict JSON-RPC envelopes; batches and ambiguous request/response envelopes fail closed.
+- Exactly nine tools are published: `list_projects`, `index_status`, `search_code`, `read_file_excerpt`, `get_symbol`, `find_references`, `trace_calls`, `find_derived_types` and `get_module_dependencies`. Their JSON Schemas are closed and bounded, their annotations are read-only/non-destructive/idempotent/closed-world, and no source write, patch, VCS mutation, reindex, build, executable, shell, command, argument-list or environment surface is present.
+- Runtime argument validation independently enforces the published contracts, including UUID/revision/path normalization, repository and edge allowlists, pagination limits, excerpt length, traversal rejection and bounded graph depth/width. Invalid tool arguments are execution errors; unknown tools and malformed requests are protocol errors.
+- HMAC-SHA-256 opaque cursors expire within a bounded lifetime and bind the authenticated principal and credential, tool name and canonical request hash. A changed identity, tool, filter, limit, query, signature or expiry is rejected; backend positions remain opaque to clients.
+- Tool results provide both structured content and backward-compatible serialized JSON. Success and stable redacted error results conform to the published output schema. Backend items must be bounded JSON objects, response size is capped at 2 MiB and arbitrary adapter/database details never enter results.
+- Every recognized tool execution writes a content-safe audit event containing principal, tool, project, request hash and outcome without raw arguments or source. Audit persistence failure fails the response closed.
+- The single Streamable HTTP endpoint requires HTTPS resource configuration, exact Host and optional Origin allowlists, bearer authentication and `mcp:read` on every MCP request, plus an injected caller-bound rate limiter and one total deadline. RFC 9728 protected-resource metadata is exposed at the well-known endpoint; authentication challenges reference it.
+- POST requires `application/json` and an Accept header containing both `application/json` and `text/event-stream`. Requests receive JSON and notifications receive `202`; this Phase 1 implementation deliberately provides neither SSE nor `Mcp-Session-Id`, and unsupported GET/DELETE requests return `405` rather than fabricating a session transport.
+- The HTTP adapter caps request bodies at 1 MiB, rejects malformed UTF-8/JSON, query-bearing endpoint URLs, unsupported protocol versions and invalid Host/Origin/media types. Rate-limit denial returns `429`; limiter outages return a redacted `503`.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/read-only-tools.test.mjs tests/unit/mcp-cursor.test.mjs tests/compatibility/mcp-protocol.test.mjs tests/compatibility/streamable-http.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused contract/cursor/protocol/transport coverage passed 17/17. It covers exact enumeration, negative mutation surfaces, closed inputs, traversal and bounds, caller/query cursor binding, initialization, list pagination, structured/text results, redacted failures, audit failure, Host/Origin/media/version handling, protected-resource discovery, authentication/scope checks and fail-closed rate limiting.
+- Full repository CI passed 189/189. Formatting, security-boundary lint, build, permissive-license audit and CycloneDX generation with the existing declared native dependency passed. Release policy passed for `0.1.0`.
+
+Known limitations and next work:
+
+- `ReadOnlyToolBackend` is a deliberately narrow injected port, not a fabricated production adapter. The nine tools are not yet wired to the P1-13 retrieval store, P1-14 lifecycle queries, evidence packaging or fresh ACL-scope provider. Production execution therefore cannot be claimed from protocol tests alone.
+- The existing database authorization model still lacks a durable path-level SVN scope, and file rows still lack an unambiguous direct revision binding when one repository contributes multiple branches. The HTTP boundary authenticates and scopes the caller, but the backend must also derive and apply fresh project/repository/path visibility for every request before any live deployment.
+- The bearer adapter covers repository-local bearer identities. Live OIDC authorization-server discovery, token audience/resource validation, reverse-proxy header trust, TLS termination, credential rotation and rate-limiter storage/partition behavior require deployment integration and negative tests.
+- The implementation is a legal stateless Streamable HTTP subset: it does not provide server-initiated SSE, resumability or MCP session IDs. These are not required for the Phase 1 read-only tools, but any future addition requires explicit lifecycle, replay, disconnect and denial-of-service controls.
+- The committed client protocol tests exercise the wire contract directly, but the external MCP Inspector is not installed in this repository and no Inspector session was run. Inspector interoperability must be captured against the deployed authenticated endpoint before formal P1-15 acceptance.
+- No live high-concurrency/rate-limit, reverse-proxy smuggling, slow-body, timeout cancellation, audit outage, P95/P99 or production response-size exercise has run. All earlier database, ACL, provider, corpus, revision-binding, object-store and G1 governance blockers remain explicit. Phase 2 remains frozen.
+
+Next work: keep the single `codex/phase-1-foundation` line. Continue with P1-16 Windows Agent/internal lease integration while scheduling the missing P1-15 backend/OAuth/Inspector acceptance work; do not create another development branch or enter Phase 2.

@@ -1,0 +1,15 @@
+{
+  "name": "@ue-codebase-mcp/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": "./src/server.ts",
+    "./cursor": "./src/cursor.ts",
+    "./streamable-http": "./src/streamable-http.ts"
+  },
+  "engines": {
+    "node": "24.18.0"
+  }
+}
