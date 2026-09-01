@@ -1158,12 +1158,13 @@ Deliverables:
 - Team roles are pre-separated across five GitHub Team principals. Their `UNCONFIGURED` subjects fail validation while team mode is active; readiness requires real organization/team subjects and five distinct identities.
 - `tools/validate-ownership.mjs` enforces the closed shape, mode invariants, configured identities and team separation. `npm run governance:check` is part of repository CI, so changing only `active_mode` is sufficient after the one-time team identities are configured.
 - Control-plane approval records snapshot `governance_mode`, `assurance_level`, technical owner, approver and risk acceptance. Solo records require explicit self-attestation/risk acceptance; team records require a distinct independent approver. Historical solo approvals are never promoted by a later mode switch.
-- The confirmed personal GitHub CODEOWNERS identity is `@losemymind`; no CODEOWNERS rule or host-side branch protection was added implicitly. Future GitHub Teams are still unknown, and repository enforcement must be configured explicitly from verified identities.
+- The confirmed personal GitHub CODEOWNERS identity is `@losemymind`. The committed CODEOWNERS routing is derived from active governance roles, and CI rejects drift; future GitHub Teams are still unknown. No host-side branch ruleset was fabricated or changed.
 
 Verification:
 
 ```powershell
 npm run governance:check
+npm run governance:sync
 node --test tests/security/governance-ownership.test.mjs tests/security/deployment-baseline.test.mjs
 npm run ci
 ```
@@ -1171,5 +1172,5 @@ npm run ci
 Acceptance boundary and next work:
 
 - Personal operation may use the active solo mapping, but any approval it issues remains self-attested and cannot satisfy an independent G1 signature.
-- Before team activation, replace all five `github-team:UNCONFIGURED/...` principals with real `github-team:<organization>/<team>` subjects, mark them configured, validate while still in solo mode, change only `active_mode` to `team`, validate again, then align CODEOWNERS and branch protection externally.
+- Before team activation, replace all five `github-team:UNCONFIGURED/...` principals with real `github-team:<organization>/<team>` subjects, mark them configured, validate while still in solo mode, change only `active_mode` to `team`, run `npm run governance:sync`, then align branch protection externally.
 - This checkpoint does not supply the missing production control-plane assembly, immutable image, SBOM/provenance, fixed-device inputs or rehearsal evidence. P1-18 remains in progress and Phase 2 remains frozen.

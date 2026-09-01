@@ -1,0 +1,11 @@
+# Generated from docs/governance/ownership.json by npm run governance:sync.
+# Review routing does not replace assurance or separation checks.
+* @losemymind
+/apps/mcp-server/ @losemymind
+/services/ @losemymind
+/packages/ @losemymind
+/deploy/ @losemymind
+/deploy/compose/control-plane-approval.example.json @losemymind
+/deploy/compose/control-plane-approval.schema.json @losemymind
+/docs/governance/ @losemymind
+/.github/ @losemymind

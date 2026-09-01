@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { renderCodeowners } from '../../tools/sync-codeowners.mjs';
 import { validateOwnership } from '../../tools/validate-ownership.mjs';
 
 const source = JSON.parse(await readFile('docs/governance/ownership.json', 'utf8'));
@@ -25,6 +26,13 @@ test('team mode fails closed until every predeclared GitHub team is configured',
   assert.throws(() => validateOwnership(value), /active mode references an unconfigured identity/);
 });
 
+test('CODEOWNERS is derived from the active governance roles', async () => {
+  const actual = await readFile('.github/CODEOWNERS', 'utf8');
+  assert.equal(actual, renderCodeowners(source));
+  assert.match(actual, /^\* @losemymind$/m);
+  assert.match(actual, /^\/deploy\/ @losemymind$/m);
+});
+
 test('one active_mode change selects configured separated team roles', () => {
   const value = clone();
   const teams = {
@@ -43,6 +51,11 @@ test('one active_mode change selects configured separated team roles', () => {
   assert.equal(resolved.assurance_level, 'independently_approved');
   assert.equal(resolved.phase_1_g1_eligible, true);
   assert.equal(new Set(Object.values(resolved.roles).map((identity) => identity.identity_id)).size, 5);
+  const codeowners = renderCodeowners(value);
+  assert.match(codeowners, /^\* @example\/control-plane$/m);
+  assert.match(codeowners, /^\/deploy\/ @example\/operations$/m);
+  assert.match(codeowners, /^\/deploy\/compose\/control-plane-approval\.schema\.json @example\/security$/m);
+  assert.match(codeowners, /^\/docs\/governance\/ @example\/g1-reviewers$/m);
 });
 
 test('governance rejects weakened mode policy, role collapse, placeholders, and extensions', () => {
