@@ -1185,3 +1185,33 @@ Status: the public GitHub repository was initialized from the existing `codex/ph
 - When team mode is activated, remove or narrow the administrator bypass, require independent reviewers, and revalidate the ruleset against the configured GitHub Teams. The current solo ruleset must not be presented as team governance.
 
 This checkpoint changes repository governance only. It does not create the missing production control-plane assembly, deployment inputs or fixed-device rehearsal evidence; P1-18 remains in progress and Phase 2 remains frozen.
+
+## P1-18 control-plane HTTP host checkpoint — adapters and production entrypoint still missing
+
+Status: a real dual-listener Node.js HTTP host was implemented and exercised over loopback on 2026-09-01. It closes one concrete gap in the control-plane process boundary, but it deliberately accepts only the already validated injected MCP and operations endpoints. There is still no production database/retrieval/authentication assembly, runnable main entrypoint, Dockerfile or approved image, so P1-18 remains in progress and is not accepted.
+
+Deliverables:
+
+- `services/control-plane/src/host.ts` binds the public MCP listener and the internal operations listener to distinct sockets. Production listen strings require an explicit IPv4 or bracketed IPv6 address and a nonzero port; ambiguous hostnames, whitespace, leading-zero ports and out-of-range ports fail before listening.
+- Both listeners use bounded header bytes/count, connections, requests per socket, header/request/keep-alive timeouts and generic malformed-client responses. The host starts atomically: an operations bind failure closes the already opened public listener. Shutdown stops acceptance, closes idle connections and applies a bounded forced-connection deadline.
+- `createNodeOperationsRequestListener` now adapts Node requests to the existing exact operations endpoint without retaining payloads. Query-bearing paths remain outside the three-path surface, any body is reduced to a presence marker and rejected, and endpoint failures return content-safe errors.
+- The control-plane workspace package is imported and copied by the deterministic repository build. It adds no third-party JavaScript dependency.
+
+Verification:
+
+```powershell
+node --test tests/integration/control-plane-host.test.mjs tests/compatibility/operations-http.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Focused endpoint and real-socket integration coverage passed 7/7, including isolated ports, public `/metrics` denial, protected internal metrics, body/query rejection, invalid listen strings, unsafe timeout ordering and partial-start rollback.
+- Full repository CI passed 235/235, including format, security-boundary lint, governance synchronization, build, license policy and CycloneDX generation. Release policy passed for `0.1.0`.
+- The socket exercise used only ephemeral loopback ports on this development workstation. It is not Compose, TLS, container, production database or fixed-device deployment evidence.
+
+Acceptance blockers and next work:
+
+- The host has no production `main` because the required PostgreSQL pool/migration gate, bearer-token repository, current ACL scope, retrieval/tool backend, audit transaction boundary, object store and approved telemetry exporter adapters do not yet exist as one fail-closed assembly. Starting a listener with test doubles would misrepresent readiness and remains prohibited.
+- No control-plane Dockerfile or image is produced by this checkpoint. The pending approval example and placeholder Compose image must remain unusable until the real assembly, SBOM, provenance and time-bounded approval exist.
+- Next implementation work is the reviewed PostgreSQL runtime boundary and fixed-statement adapters needed by authentication, authorization, retrieval, audit and readiness. Live acceptance still requires a representative PostgreSQL plus pgvector environment; fixed-device TLS/update/rollback rehearsal remains a separate blocker.
+- Solo ownership and the GitHub ruleset do not convert this checkpoint into independent G1 approval. Phase 2 remains frozen.

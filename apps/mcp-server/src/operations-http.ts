@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import {
   createObservationContext,
@@ -159,4 +160,41 @@ export class OperationsHttpEndpoint {
       duration_ms: performance.now() - started, attributes: Object.freeze({ status_code: result.status }) }));
     return attachContext(result, context);
   }
+}
+
+export function createNodeOperationsRequestListener(endpoint: OperationsHttpEndpoint):
+  (request: IncomingMessage, responseValue: ServerResponse) => void {
+  if (!(endpoint instanceof OperationsHttpEndpoint)) throw new TypeError('invalid operations endpoint');
+  return (request, responseValue) => {
+    let bodyPresent = false;
+    request.on('data', (chunk: Buffer | string) => {
+      if ((Buffer.isBuffer(chunk) ? chunk.byteLength : Buffer.byteLength(chunk)) > 0) bodyPresent = true;
+    });
+    request.on('end', () => {
+      const headers: Record<string, string | undefined> = {};
+      for (const [name, value] of Object.entries(request.headers)) {
+        if (Array.isArray(value)) headers[name] = value.join(', ');
+        else headers[name] = value;
+      }
+      let requestPath = '';
+      try {
+        const url = new URL(request.url ?? '/', 'http://localhost');
+        requestPath = url.search.length === 0 && url.hash.length === 0 ? url.pathname : '';
+      } catch { requestPath = ''; }
+      endpoint.handle(Object.freeze({ method: request.method ?? '', path: requestPath,
+        headers: Object.freeze(headers), ...(bodyPresent ? { body: new Uint8Array([1]) } : {}) })).then((result) => {
+        responseValue.writeHead(result.status, result.headers);
+        responseValue.end(result.body);
+      }, () => {
+        responseValue.writeHead(500, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8' });
+        responseValue.end('{"status":"internal_error"}');
+      });
+    });
+    request.on('error', () => {
+      if (!responseValue.headersSent) {
+        responseValue.writeHead(400, { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8' });
+        responseValue.end('{"status":"invalid_request"}');
+      }
+    });
+  };
 }
