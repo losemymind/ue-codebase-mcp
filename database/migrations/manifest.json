@@ -42,6 +42,12 @@
       "name": "p1_16_durable_job_leases",
       "up": "0007_p1_16_durable_job_leases.up.sql",
       "down": "0007_p1_16_durable_job_leases.down.sql"
+    },
+    {
+      "version": 8,
+      "name": "p1_17_observability_audit",
+      "up": "0008_p1_17_observability_audit.up.sql",
+      "down": "0008_p1_17_observability_audit.down.sql"
     }
   ]
 }

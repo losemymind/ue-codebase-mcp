@@ -1,0 +1,72 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [{ "expr": "sum by (component, operation) (rate(ue_codebase_requests_total[5m]))", "legendFormat": "{{component}} / {{operation}}", "refId": "A" }],
+      "title": "Operation rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [{ "expr": "sum(rate(ue_codebase_requests_total{outcome=\"failed\"}[5m])) / clamp_min(sum(rate(ue_codebase_requests_total[5m])), 1)", "legendFormat": "failure ratio", "refId": "A" }],
+      "title": "Failure ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, component, operation) (rate(ue_codebase_request_duration_ms_bucket[5m])))", "legendFormat": "{{component}} / {{operation}}", "refId": "A" }],
+      "title": "P95 operation latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "targets": [{ "expr": "increase(ue_codebase_telemetry_dropped_total[5m])", "legendFormat": "dropped records", "refId": "A" }],
+      "title": "Telemetry sink drops",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "targets": [{ "expr": "sum by (outcome) (rate(ue_codebase_requests_total{component=\"windows-agent\",operation=\"iteration\"}[5m]))", "legendFormat": "{{outcome}}", "refId": "A" }],
+      "title": "Windows Agent iteration health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "targets": [{ "expr": "sum by (operation, outcome) (rate(ue_codebase_requests_total{component=\"index-coordinator\"}[5m]))", "legendFormat": "{{operation}} / {{outcome}}", "refId": "A" }],
+      "title": "Agent and job API outcomes",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["ue-codebase-mcp", "phase-1"],
+  "templating": {
+    "list": [{ "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus", "current": {} }]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "UE Codebase MCP - Phase 1",
+  "uid": "ue-codebase-mcp-p1",
+  "version": 1
+}

@@ -9,6 +9,7 @@ import {
   validateCompletionManifest,
   validateJobPayload,
 } from '../../workers/windows-agent/src/contracts.ts';
+import { ObservabilityRecorder } from '../../packages/observability/src/index.ts';
 
 class FakeClock {
   constructor(value = Date.parse('2026-08-28T00:00:00.000Z')) { this.value = value; }
@@ -20,6 +21,7 @@ class FakeClock {
 const token = 'short-lived-agent-token-value';
 const auth = { token };
 const credentialProvider = { resolve: async () => ({ token, expires_at: '2099-01-01T00:00:00.000Z' }) };
+const observability = () => new ObservabilityRecorder({ emit() {} });
 
 function config() {
   return validateAgentConfig({
@@ -95,6 +97,7 @@ test('Windows Agent executes a typed job with heartbeat/events and publishes the
   let handled = 0;
   const agent = new WindowsAgent({
     config: config(), transport: coordinator, credentials: credentialProvider, clock,
+    observability: observability(),
     handlers: { reindex: async (job, context) => {
       handled += 1;
       await context.event({ level: 'info', event_type: 'index.started', fields: { phase: 'svn', progress_percent: 5 } });
@@ -112,6 +115,7 @@ test('failed handlers are classified without returning raw diagnostics and retry
   const jobId = coordinator.enqueue(payload(), { max_attempts: 2 });
   const agent = new WindowsAgent({
     config: config(), transport: coordinator, credentials: credentialProvider, clock,
+    observability: observability(),
     handlers: { reindex: async () => { throw new Error('PRIVATE_SOURCE_CANARY'); } },
   });
   assert.equal(await agent.runOnce(), 'failed');
@@ -143,6 +147,7 @@ test('independent heartbeat watchdog aborts cooperative work when its lease is l
   };
   const agent = new WindowsAgent({
     config: config(), transport, credentials: credentialProvider, clock,
+    observability: observability(),
     handlers: { reindex: async (job, context) => new Promise((resolve) => {
       context.signal.addEventListener('abort', () => {
         observedAbort = true;

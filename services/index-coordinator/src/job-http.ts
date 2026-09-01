@@ -1,4 +1,13 @@
 import type { BearerIdentity } from '../../../packages/auth/src/bearer.ts';
+import { performance } from 'node:perf_hooks';
+import {
+  createObservationContext,
+  sha256,
+  traceparent,
+  type ObservationContext,
+  type ObservabilityRecorder,
+  type SecurityAuditSink,
+} from '../../../packages/observability/src/index.ts';
 import type {
   AgentEventRequest,
   ClaimJobsRequest,
@@ -34,6 +43,8 @@ export interface InternalJobHttpOptions {
   readonly allowed_hosts: readonly string[];
   readonly max_body_bytes?: number;
   readonly request_timeout_ms?: number;
+  readonly audit_sink: SecurityAuditSink;
+  readonly observability: ObservabilityRecorder;
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -42,6 +53,14 @@ const HOST = /^(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::[0-9]{1,5})?$/;
 const UUID = '[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-5][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}';
 const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const JOB_ROUTE = new RegExp(`^/internal/v1/jobs/(${UUID})/(heartbeat|events|complete|fail)$`);
+
+function operationForPath(path: unknown): string {
+  if (path === '/internal/v1/agents/register') return 'agent-register';
+  if (path === '/internal/v1/jobs/claim') return 'job-claim';
+  if (typeof path !== 'string') return 'unknown';
+  const route = JOB_ROUTE.exec(path);
+  return route === null ? 'unknown' : `job-${route[2]}`;
+}
 
 function response(status: number, body?: unknown, extra: Readonly<Record<string, string>> = {}): InternalJobHttpResponse {
   const encoded = body === undefined ? undefined : JSON.stringify(body);
@@ -114,12 +133,17 @@ export class InternalJobHttpEndpoint {
   readonly #allowedHosts: ReadonlySet<string>;
   readonly #maxBodyBytes: number;
   readonly #timeoutMs: number;
+  readonly #audit: SecurityAuditSink;
+  readonly #observability: ObservabilityRecorder;
 
   constructor(service: DurableJobLeaseService, authenticator: AgentHttpAuthenticator, options: InternalJobHttpOptions) {
     if (typeof service !== 'object' || service === null || typeof service.claim !== 'function'
         || typeof authenticator !== 'object' || authenticator === null || typeof authenticator.authenticate !== 'function'
         || typeof options !== 'object' || options === null || !Array.isArray(options.allowed_hosts)
-        || options.allowed_hosts.length < 1 || options.allowed_hosts.length > 64) throw new TypeError('invalid internal job HTTP configuration');
+        || options.allowed_hosts.length < 1 || options.allowed_hosts.length > 64
+        || typeof options.audit_sink !== 'object' || options.audit_sink === null || typeof options.audit_sink.record !== 'function'
+        || typeof options.observability !== 'object' || options.observability === null
+        || typeof options.observability.record !== 'function') throw new TypeError('invalid internal job HTTP configuration');
     const hosts = options.allowed_hosts.map((host) => {
       if (!validHost(host)) throw new TypeError('invalid internal job host');
       return host.toLowerCase();
@@ -134,19 +158,26 @@ export class InternalJobHttpEndpoint {
     this.#service = service;
     this.#authenticator = authenticator;
     this.#allowedHosts = new Set(hosts);
+    this.#audit = options.audit_sink;
+    this.#observability = options.observability;
   }
 
-  async handle(request: InternalJobHttpRequest): Promise<InternalJobHttpResponse> {
+  async #handle(request: InternalJobHttpRequest, headers: Readonly<Record<string, string | undefined>>,
+    observation: ObservationContext): Promise<InternalJobHttpResponse> {
+    let identity: AuthenticatedAgent | undefined;
+    let action: string | undefined;
+    let resourceType: string | null = null;
+    let resourceId: string | null = null;
+    let requestHash: string | undefined;
+    let auditAttempted = false;
     try {
       if (typeof request !== 'object' || request === null || typeof request.method !== 'string'
           || typeof request.path !== 'string' || !/^\/[A-Za-z0-9._~/-]{1,255}$/.test(request.path)) return response(400, { error: 'invalid_request' });
-      const headers = normalizedHeaders(request.headers);
       if (headers.host === undefined || !this.#allowedHosts.has(headers.host.toLowerCase()) || headers.origin !== undefined) {
         return response(403, { error: 'forbidden' });
       }
       const deadline = Date.now() + this.#timeoutMs;
       const remaining = (): number => Math.max(1, deadline - Date.now());
-      let identity: AuthenticatedAgent;
       try {
         if (headers.authorization === undefined || headers.authorization.length > 8192) throw new Error('missing authentication');
         identity = await timeout(this.#authenticator.authenticate(headers.authorization), remaining());
@@ -157,23 +188,55 @@ export class InternalJobHttpEndpoint {
       if (!acceptsJson(headers.accept)) return response(406, { error: 'not_acceptable' });
       let body: unknown;
       try { body = parseBody(request.body, this.#maxBodyBytes); } catch { return response(400, { error: 'invalid_json' }); }
+      requestHash = sha256(typeof request.body === 'string' ? request.body : request.body ?? new Uint8Array());
       let result: unknown;
       if (request.path === '/internal/v1/agents/register') {
+        action = 'agent.register';
+        resourceType = 'agent';
+        resourceId = identity.agent_id;
         result = await timeout(this.#service.register(body as RegisterAgentRequest, identity), remaining());
       } else if (request.path === '/internal/v1/jobs/claim') {
+        action = 'job.claim';
+        resourceType = 'agent';
+        resourceId = identity.agent_id;
         result = await timeout(this.#service.claim(body as ClaimJobsRequest, identity), remaining());
+        if (typeof result === 'object' && result !== null && typeof (result as Record<string, unknown>).job_id === 'string') {
+          resourceType = 'job';
+          resourceId = (result as Record<string, unknown>).job_id as string;
+        }
       } else {
         const route = JOB_ROUTE.exec(request.path);
         if (route === null) return response(404, { error: 'not_found' });
         if (typeof body !== 'object' || body === null || Array.isArray(body)
             || (body as Record<string, unknown>).job_id !== route[1]) return response(400, { error: 'invalid_request' });
+        action = `job.${route[2] === 'events' ? 'event' : route[2]}`;
+        resourceType = 'job';
+        resourceId = route[1];
         if (route[2] === 'heartbeat') result = await timeout(this.#service.heartbeat(body as HeartbeatRequest, identity), remaining());
         else if (route[2] === 'events') result = await timeout(this.#service.event(body as AgentEventRequest, identity), remaining());
         else if (route[2] === 'complete') result = await timeout(this.#service.complete(body as CompleteJobRequest, identity), remaining());
         else result = await timeout(this.#service.fail(body as FailJobRequest, identity), remaining());
       }
+      const disposition = typeof result === 'object' && result !== null
+        && typeof (result as Record<string, unknown>).disposition === 'string'
+        ? (result as Record<string, unknown>).disposition as string : null;
+      const rejected = typeof result === 'object' && result !== null && (result as Record<string, unknown>).accepted === false;
+      auditAttempted = true;
+      await this.#audit.record(Object.freeze({ actor_type: 'agent', actor_id: identity.agent_id, action,
+        project_id: null, tool: null, outcome: rejected ? 'denied' : 'succeeded', request_hash: requestHash,
+        correlation_id: observation.correlation_id, trace_id: observation.trace_id, span_id: observation.span_id,
+        resource_type: resourceType, resource_id: resourceId, error_code: rejected ? disposition ?? 'rejected' : null }));
       return response(200, result);
     } catch (error) {
+      if (!auditAttempted && identity !== undefined && action !== undefined && requestHash !== undefined) {
+        try {
+          await this.#audit.record(Object.freeze({ actor_type: 'agent', actor_id: identity.agent_id, action,
+            project_id: null, tool: null, outcome: 'failed', request_hash: requestHash,
+            correlation_id: observation.correlation_id, trace_id: observation.trace_id, span_id: observation.span_id,
+            resource_type: resourceType, resource_id: resourceId,
+            error_code: error instanceof DurableJobLeaseError ? error.code : 'service-unavailable' }));
+        } catch { return response(503, { error: 'audit_unavailable' }); }
+      }
       if (error instanceof DurableJobLeaseError) {
         if (error.code === 'invalid-request') return response(400, { error: error.code });
         if (error.code === 'agent-disabled') return response(403, { error: error.code });
@@ -181,5 +244,24 @@ export class InternalJobHttpEndpoint {
       }
       return response(503, { error: 'service_unavailable' });
     }
+  }
+
+  async handle(request: InternalJobHttpRequest): Promise<InternalJobHttpResponse> {
+    const started = performance.now();
+    let observation = createObservationContext();
+    let result: InternalJobHttpResponse;
+    try {
+      const headers = normalizedHeaders(request?.headers ?? {});
+      observation = createObservationContext(headers);
+      result = await this.#handle(request, headers, observation);
+    } catch {
+      result = response(400, { error: 'invalid_request' });
+    }
+    const outcome = result.status < 400 ? 'succeeded' : result.status === 401 || result.status === 403 ? 'denied' : 'failed';
+    this.#observability.record(Object.freeze({ context: observation, component: 'index-coordinator',
+      operation: operationForPath(request?.path), outcome, duration_ms: performance.now() - started,
+      attributes: Object.freeze({ status_code: result.status }) }));
+    return Object.freeze({ ...result, headers: Object.freeze({ ...result.headers,
+      'X-Correlation-ID': observation.correlation_id, traceparent: traceparent(observation) }) });
   }
 }

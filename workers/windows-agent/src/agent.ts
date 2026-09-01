@@ -14,6 +14,11 @@ import {
   validateClaimedJob,
   validateCompletionManifest,
 } from './contracts.ts';
+import {
+  createObservationContext,
+  type ObservationContext,
+  type ObservabilityRecorder,
+} from '../../../packages/observability/src/index.ts';
 
 export interface JobExecutionContext {
   heartbeat(progressPercent: number, resources?: { memory_mb: number; cpu_percent: number }): Promise<void>;
@@ -105,6 +110,7 @@ export class WindowsAgent {
   readonly #credentials: CredentialProvider;
   readonly #handlers: AgentJobHandlers;
   readonly #clock: Clock;
+  readonly #observability: ObservabilityRecorder;
   #registered = false;
 
   constructor(options: {
@@ -112,6 +118,7 @@ export class WindowsAgent {
     transport: AgentTransport;
     credentials: CredentialProvider;
     handlers: AgentJobHandlers;
+    observability: ObservabilityRecorder;
     clock?: Clock;
   }) {
     this.#config = options.config;
@@ -119,6 +126,9 @@ export class WindowsAgent {
     this.#credentials = options.credentials;
     this.#handlers = options.handlers;
     this.#clock = options.clock ?? new SystemClock();
+    if (typeof options.observability !== 'object' || options.observability === null
+        || typeof options.observability.record !== 'function') throw new TypeError('invalid Agent observability');
+    this.#observability = options.observability;
   }
 
   async #auth() {
@@ -126,7 +136,7 @@ export class WindowsAgent {
     return assertCredential(credential, this.#clock.now());
   }
 
-  async register(): Promise<void> {
+  async register(observation: ObservationContext = createObservationContext()): Promise<void> {
     const response = await this.#transport.register({
       schema: 'ue-codebase-mcp/agent-register',
       version: 2,
@@ -135,27 +145,49 @@ export class WindowsAgent {
       ue_version: '5.6',
       vcs: ['svn'],
       capabilities: [...this.#config.capabilities],
-    }, await this.#auth());
+    }, await this.#auth(), observation);
     if (response.accepted !== true || Number.isNaN(Date.parse(response.registered_at))) throw new TypeError('coordinator returned an invalid registration response');
     this.#registered = true;
   }
 
   async runOnce(): Promise<AgentIterationResult> {
-    if (!this.#registered) await this.register();
-    const claimedValue = await this.#transport.claim({
-      schema: 'ue-codebase-mcp/job-claim',
-      version: 2,
-      agent_id: this.#config.agent_id,
-      supported_kinds: ['reindex'],
-      wait_ms: this.#config.claim_wait_ms,
-    }, await this.#auth());
-    if (claimedValue === null) return 'idle';
-    const claimed = validateClaimedJob(claimedValue);
-    if (claimed.lease.agent_id !== this.#config.agent_id) throw new TypeError('coordinator assigned a lease to another agent');
-    return this.#execute(claimed.lease, claimed.payload, claimed.next_event_sequence);
+    const observation = createObservationContext();
+    const started = this.#clock.now().getTime();
+    try {
+      if (!this.#registered) await this.register(observation);
+      const claimedValue = await this.#transport.claim({
+        schema: 'ue-codebase-mcp/job-claim',
+        version: 2,
+        agent_id: this.#config.agent_id,
+        supported_kinds: ['reindex'],
+        wait_ms: this.#config.claim_wait_ms,
+      }, await this.#auth(), observation);
+      if (claimedValue === null) {
+        this.#recordIteration(observation, started, 'idle');
+        return 'idle';
+      }
+      const claimed = validateClaimedJob(claimedValue);
+      if (claimed.lease.agent_id !== this.#config.agent_id) throw new TypeError('coordinator assigned a lease to another agent');
+      const result = await this.#execute(claimed.lease, claimed.payload, claimed.next_event_sequence, observation);
+      this.#recordIteration(observation, started, result);
+      return result;
+    } catch (error) {
+      this.#observability.record(Object.freeze({ context: observation, component: 'windows-agent', operation: 'iteration',
+        outcome: 'failed', duration_ms: Math.max(0, this.#clock.now().getTime() - started),
+        attributes: Object.freeze({ error_code: 'coordinator-unavailable', agent_status: 'offline' }) }));
+      throw error;
+    }
   }
 
-  async #execute(initialLease: JobLease, payload: AgentJobPayload, initialSequence: number): Promise<AgentIterationResult> {
+  #recordIteration(observation: ObservationContext, started: number, result: AgentIterationResult): void {
+    this.#observability.record(Object.freeze({ context: observation, component: 'windows-agent', operation: 'iteration',
+      outcome: result === 'completed' || result === 'idle' ? 'succeeded' : 'failed',
+      duration_ms: Math.max(0, this.#clock.now().getTime() - started),
+      attributes: Object.freeze({ disposition: result, agent_status: result === 'lease_lost' ? 'degraded' : 'online' }) }));
+  }
+
+  async #execute(initialLease: JobLease, payload: AgentJobPayload, initialSequence: number,
+    observation: ObservationContext): Promise<AgentIterationResult> {
     let lease = initialLease;
     let sequence = initialSequence;
     let latestProgress = 0;
@@ -169,7 +201,7 @@ export class WindowsAgent {
         progress_percent: latestProgress,
         resources: latestResources,
       };
-      const response = await this.#transport.heartbeat(request, await this.#auth());
+      const response = await this.#transport.heartbeat(request, await this.#auth(), observation);
       if (!response.accepted) throw new LeaseLostError();
       if (response.lease_expires_at !== undefined) lease = { ...lease, lease_expires_at: response.lease_expires_at };
     };
@@ -183,7 +215,7 @@ export class WindowsAgent {
         event_type: safeEvent.event_type,
         fields: safeEvent.fields ?? {},
       };
-      const response = await this.#transport.event(request, await this.#auth());
+      const response = await this.#transport.event(request, await this.#auth(), observation);
       if (!response.accepted) {
         if (response.disposition === 'lease_lost') throw new LeaseLostError();
         throw new Error('coordinator rejected the event sequence');
@@ -216,7 +248,7 @@ export class WindowsAgent {
       const result = validateCompletionManifest(resultValue);
       if (result.revision_set_hash !== payload.revision_set.hash) throw new AgentJobError('INVALID_SOURCE_INPUT', false);
       await heartbeat(100);
-      const completion = await this.#transport.complete({ ...lease, result }, await this.#auth());
+      const completion = await this.#transport.complete({ ...lease, result }, await this.#auth(), observation);
       return completion.accepted ? 'completed' : 'lease_lost';
     } catch (error) {
       if (error instanceof LeaseLostError) return 'lease_lost';
@@ -228,7 +260,7 @@ export class WindowsAgent {
         error_code: classified.errorCode,
         retryable: classified.retryable,
         diagnostic: diagnosticByCode[classified.errorCode],
-      }, await this.#auth()).catch(() => undefined);
+      }, await this.#auth(), observation).catch(() => undefined);
       return failure?.accepted ? 'failed' : 'lease_lost';
     }
   }

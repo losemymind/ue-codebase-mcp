@@ -49,7 +49,7 @@ function tableNames(sql, operation) {
 
 test('migration manifest is contiguous and every migration is transactional', async () => {
   assert.equal(manifest.schema, 'ue_mcp');
-  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5, 6, 7, 8]);
 
   for (const migration of manifest.migrations) {
     for (const direction of ['up', 'down']) {
@@ -153,6 +153,23 @@ test('P1-16 migration binds durable job payloads, availability, fencing, events 
   assert.match(up, /WHERE status = 'queued' AND agent_payload IS NOT NULL/);
   assert.match(up, /VALUES \(7, 'p1_16_durable_job_leases'/);
   assert.match(down, /version = 7 AND name = 'p1_16_durable_job_leases'/);
+});
+
+test('P1-17 migration makes correlation and trace audit evidence durable and indexed', async () => {
+  const up = await readFile(path.join(migrationRoot, '0008_p1_17_observability_audit.up.sql'), 'utf8');
+  const down = await readFile(path.join(migrationRoot, '0008_p1_17_observability_audit.down.sql'), 'utf8');
+  for (const field of ['correlation_id', 'trace_id', 'span_id', 'resource_type', 'resource_id', 'error_code']) {
+    assert.match(up, new RegExp(`ADD COLUMN ${field}\\b`));
+    assert.match(down, new RegExp(`DROP COLUMN ${field}\\b`));
+  }
+  assert.match(up, /ALTER COLUMN correlation_id SET NOT NULL/);
+  assert.match(up, /audit_events_trace_id_check/);
+  assert.match(up, /audit_events_span_id_check/);
+  assert.match(up, /audit_events_correlation_time_idx/);
+  assert.match(up, /audit_events_trace_time_idx/);
+  assert.match(up, /audit_events_resource_time_idx/);
+  assert.match(up, /VALUES \(8, 'p1_17_observability_audit'/);
+  assert.match(down, /version = 8 AND name = 'p1_17_observability_audit'/);
 });
 
 test('core migration covers phase 1 sections 5.1 through 5.3 and 5.5 only', async () => {

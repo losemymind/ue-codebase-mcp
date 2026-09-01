@@ -1,3 +1,5 @@
+import type { ObservationContext } from '../../../packages/observability/src/index.ts';
+
 export const AGENT_PROTOCOL_VERSION = 2 as const;
 export const AGENT_CONFIG_VERSION = 1 as const;
 export const JOB_SCHEMA_VERSION = 1 as const;
@@ -139,12 +141,12 @@ export interface FencedOperationResponse {
 }
 
 export interface AgentTransport {
-  register(request: RegisterAgentRequest, auth: AgentAuth): Promise<RegisterAgentResponse>;
-  claim(request: ClaimJobsRequest, auth: AgentAuth): Promise<ClaimedJob | null>;
-  heartbeat(request: HeartbeatRequest, auth: AgentAuth): Promise<FencedOperationResponse>;
-  event(request: AgentEventRequest, auth: AgentAuth): Promise<FencedOperationResponse>;
-  complete(request: CompleteJobRequest, auth: AgentAuth): Promise<FencedOperationResponse>;
-  fail(request: FailJobRequest, auth: AgentAuth): Promise<FencedOperationResponse>;
+  register(request: RegisterAgentRequest, auth: AgentAuth, observation: ObservationContext): Promise<RegisterAgentResponse>;
+  claim(request: ClaimJobsRequest, auth: AgentAuth, observation: ObservationContext): Promise<ClaimedJob | null>;
+  heartbeat(request: HeartbeatRequest, auth: AgentAuth, observation: ObservationContext): Promise<FencedOperationResponse>;
+  event(request: AgentEventRequest, auth: AgentAuth, observation: ObservationContext): Promise<FencedOperationResponse>;
+  complete(request: CompleteJobRequest, auth: AgentAuth, observation: ObservationContext): Promise<FencedOperationResponse>;
+  fail(request: FailJobRequest, auth: AgentAuth, observation: ObservationContext): Promise<FencedOperationResponse>;
 }
 
 export interface Clock {

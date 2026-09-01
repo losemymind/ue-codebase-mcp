@@ -12,6 +12,7 @@ import {
   type RegisterAgentResponse,
   validateClaimedJob,
 } from './contracts.ts';
+import { assertObservationContext, traceparent, type ObservationContext } from '../../../packages/observability/src/index.ts';
 
 const MAX_RESPONSE_BYTES = 262_144;
 
@@ -53,7 +54,8 @@ export class HttpAgentTransport implements AgentTransport {
     if (!Number.isInteger(this.#timeoutMs) || this.#timeoutMs < 1_000 || this.#timeoutMs > 120_000) throw new RangeError('HTTP timeout is out of bounds');
   }
 
-  async #post(pathname: string, body: unknown, auth: AgentAuth): Promise<unknown> {
+  async #post(pathname: string, body: unknown, auth: AgentAuth, observation: ObservationContext): Promise<unknown> {
+    assertObservationContext(observation);
     if (typeof auth.token !== 'string' || auth.token.length < 16 || auth.token.length > 8192
         || !/^[A-Za-z0-9._~-]+$/.test(auth.token)) throw new TypeError('agent authentication is invalid');
     const url = new URL(pathname, this.#endpoint);
@@ -66,6 +68,8 @@ export class HttpAgentTransport implements AgentTransport {
         accept: 'application/json',
         authorization: `Bearer ${auth.token}`,
         'content-type': 'application/json',
+        'x-correlation-id': observation.correlation_id,
+        traceparent: traceparent(observation),
       },
       body: JSON.stringify(body),
     });
@@ -84,32 +88,32 @@ export class HttpAgentTransport implements AgentTransport {
     }
   }
 
-  async register(request: RegisterAgentRequest, auth: AgentAuth): Promise<RegisterAgentResponse> {
-    const object = responseObject(await this.#post('/internal/v1/agents/register', request, auth), 'register');
+  async register(request: RegisterAgentRequest, auth: AgentAuth, observation: ObservationContext): Promise<RegisterAgentResponse> {
+    const object = responseObject(await this.#post('/internal/v1/agents/register', request, auth, observation), 'register');
     if (Object.keys(object).some((key) => !['accepted', 'registered_at'].includes(key)) || object.accepted !== true || typeof object.registered_at !== 'string' || Number.isNaN(Date.parse(object.registered_at))) {
       throw new TypeError('register response is invalid');
     }
     return { accepted: true, registered_at: object.registered_at };
   }
 
-  async claim(request: ClaimJobsRequest, auth: AgentAuth): Promise<ClaimedJob | null> {
-    const response = await this.#post('/internal/v1/jobs/claim', request, auth);
+  async claim(request: ClaimJobsRequest, auth: AgentAuth, observation: ObservationContext): Promise<ClaimedJob | null> {
+    const response = await this.#post('/internal/v1/jobs/claim', request, auth, observation);
     return response === null ? null : validateClaimedJob(response);
   }
 
-  heartbeat(request: HeartbeatRequest, auth: AgentAuth): Promise<FencedOperationResponse> {
-    return this.#post(`/internal/v1/jobs/${encodeURIComponent(request.job_id)}/heartbeat`, request, auth).then(fencedResponse);
+  heartbeat(request: HeartbeatRequest, auth: AgentAuth, observation: ObservationContext): Promise<FencedOperationResponse> {
+    return this.#post(`/internal/v1/jobs/${encodeURIComponent(request.job_id)}/heartbeat`, request, auth, observation).then(fencedResponse);
   }
 
-  event(request: AgentEventRequest, auth: AgentAuth): Promise<FencedOperationResponse> {
-    return this.#post(`/internal/v1/jobs/${encodeURIComponent(request.job_id)}/events`, request, auth).then(fencedResponse);
+  event(request: AgentEventRequest, auth: AgentAuth, observation: ObservationContext): Promise<FencedOperationResponse> {
+    return this.#post(`/internal/v1/jobs/${encodeURIComponent(request.job_id)}/events`, request, auth, observation).then(fencedResponse);
   }
 
-  complete(request: CompleteJobRequest, auth: AgentAuth): Promise<FencedOperationResponse> {
-    return this.#post(`/internal/v1/jobs/${encodeURIComponent(request.job_id)}/complete`, request, auth).then(fencedResponse);
+  complete(request: CompleteJobRequest, auth: AgentAuth, observation: ObservationContext): Promise<FencedOperationResponse> {
+    return this.#post(`/internal/v1/jobs/${encodeURIComponent(request.job_id)}/complete`, request, auth, observation).then(fencedResponse);
   }
 
-  fail(request: FailJobRequest, auth: AgentAuth): Promise<FencedOperationResponse> {
-    return this.#post(`/internal/v1/jobs/${encodeURIComponent(request.job_id)}/fail`, request, auth).then(fencedResponse);
+  fail(request: FailJobRequest, auth: AgentAuth, observation: ObservationContext): Promise<FencedOperationResponse> {
+    return this.#post(`/internal/v1/jobs/${encodeURIComponent(request.job_id)}/fail`, request, auth, observation).then(fencedResponse);
   }
 }

@@ -6,10 +6,11 @@ import {
   ReadOnlyMcpServer,
   ToolExecutionError,
 } from '../../apps/mcp-server/src/server.ts';
+import { createObservationContext, ObservabilityRecorder } from '../../packages/observability/src/index.ts';
 
 const projectId = '10000000-0000-4000-8000-000000000001';
 const principal = Object.freeze({ type: 'user', id: 'alice', credential_id: 'token-1', scopes: Object.freeze(['mcp:read']) });
-const context = Object.freeze({ principal, protocol_version: '2025-11-25' });
+const context = Object.freeze({ principal, protocol_version: '2025-11-25', observation: createObservationContext() });
 
 function fixture(overrides = {}) {
   const calls = [];
@@ -22,7 +23,9 @@ function fixture(overrides = {}) {
     ...overrides.backend,
   };
   const audit = { async record(event) { audits.push(event); }, ...overrides.audit };
-  return { server: new ReadOnlyMcpServer(backend, new OpaqueCursorCodec(Buffer.alloc(32, 3)), audit), calls, audits };
+  const records = [];
+  const observability = new ObservabilityRecorder({ emit(record) { records.push(record); } });
+  return { server: new ReadOnlyMcpServer(backend, new OpaqueCursorCodec(Buffer.alloc(32, 3)), audit, observability), calls, audits, records };
 }
 
 async function request(server, id, method, params) {
@@ -66,6 +69,8 @@ test('tools/call returns structured and text content and resumes an unchanged re
   assert.equal(calls[1].position, 'page:2');
   assert.equal(audits.length, 2);
   assert.equal('query' in audits[0], false);
+  assert.equal(audits[0].correlation_id, context.observation.correlation_id);
+  assert.equal(audits[0].trace_id, context.observation.trace_id);
   const changed = await request(server, 7, 'tools/call', {
     name: 'search_code', arguments: { project_id: projectId, query: 'Different', limit: 2, cursor },
   });

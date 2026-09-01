@@ -1,5 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { performance } from 'node:perf_hooks';
 import type { BearerIdentity } from '../../../packages/auth/src/bearer.ts';
+import {
+  createObservationContext,
+  traceparent,
+  type ObservationContext,
+  type ObservabilityRecorder,
+} from '../../../packages/observability/src/index.ts';
 import {
   MCP_PROTOCOL_VERSIONS,
   type McpPrincipal,
@@ -42,6 +49,7 @@ export interface StreamableHttpMcpOptions {
   readonly max_body_bytes?: number;
   readonly request_timeout_ms?: number;
   readonly rate_limiter: McpRequestRateLimiter;
+  readonly observability: ObservabilityRecorder;
 }
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -152,13 +160,16 @@ export class StreamableHttpMcpEndpoint {
   readonly #maximumBodyBytes: number;
   readonly #timeoutMs: number;
   readonly #rateLimiter: McpRequestRateLimiter;
+  readonly #observability: ObservabilityRecorder;
   readonly #challenge: string;
 
   constructor(server: ReadOnlyMcpServer, authenticator: McpRequestAuthenticator, options: StreamableHttpMcpOptions) {
     if (typeof server !== 'object' || server === null || typeof server.handle !== 'function'
         || typeof authenticator !== 'object' || authenticator === null || typeof authenticator.authenticate !== 'function'
         || typeof options !== 'object' || options === null || typeof options.rate_limiter !== 'object'
-        || options.rate_limiter === null || typeof options.rate_limiter.allow !== 'function') throw new TypeError('invalid HTTP MCP configuration');
+        || options.rate_limiter === null || typeof options.rate_limiter.allow !== 'function'
+        || typeof options.observability !== 'object' || options.observability === null
+        || typeof options.observability.record !== 'function') throw new TypeError('invalid HTTP MCP configuration');
     const mcpPath = options.mcp_path ?? '/mcp';
     const metadataPath = options.metadata_path ?? '/.well-known/oauth-protected-resource';
     if (!PATH.test(mcpPath) || !PATH.test(metadataPath) || mcpPath === metadataPath) throw new TypeError('invalid HTTP MCP path');
@@ -192,6 +203,7 @@ export class StreamableHttpMcpEndpoint {
     this.#maximumBodyBytes = maximumBodyBytes;
     this.#timeoutMs = timeoutMs;
     this.#rateLimiter = options.rate_limiter;
+    this.#observability = options.observability;
     this.#challenge = `Bearer resource_metadata="${new URL(metadataPath, resource.origin).href}", scope="mcp:read"`;
   }
 
@@ -204,11 +216,11 @@ export class StreamableHttpMcpEndpoint {
     }));
   }
 
-  async handle(request: McpHttpRequest): Promise<McpHttpResponse> {
+  async #handle(request: McpHttpRequest, headers: Readonly<Record<string, string | undefined>>,
+    observation: ObservationContext): Promise<McpHttpResponse> {
     try {
       if (typeof request !== 'object' || request === null || typeof request.method !== 'string'
           || typeof request.path !== 'string' || !PATH.test(request.path)) return transportError(400, -32600, 'Invalid Request');
-      const headers = normalizedHeaders(request.headers);
       const host = headers.host?.toLowerCase();
       if (host === undefined || !this.#allowedHosts.has(host)) return transportError(403, -32000, 'Forbidden');
       if (headers.origin !== undefined) {
@@ -254,13 +266,34 @@ export class StreamableHttpMcpEndpoint {
       if (protocolVersion !== undefined && !MCP_PROTOCOL_VERSIONS.includes(protocolVersion as typeof MCP_PROTOCOL_VERSIONS[number])) {
         return transportError(400, -32602, 'Unsupported MCP protocol version');
       }
-      const context: McpProtocolContext = Object.freeze({ principal, ...(protocolVersion === undefined ? {} : { protocol_version: protocolVersion }) });
+      const context: McpProtocolContext = Object.freeze({ principal, observation,
+        ...(protocolVersion === undefined ? {} : { protocol_version: protocolVersion }) });
       const reply = await withTimeout(this.#server.handle(message, context), remaining());
       if (reply.kind === 'accepted') return response(202);
       return response(200, reply.body);
     } catch {
       return transportError(500, -32603, 'Internal error');
     }
+  }
+
+  async handle(request: McpHttpRequest): Promise<McpHttpResponse> {
+    const started = performance.now();
+    let observation = createObservationContext();
+    let result: McpHttpResponse;
+    try {
+      const headers = normalizedHeaders(request?.headers ?? {});
+      observation = createObservationContext(headers);
+      result = await this.#handle(request, headers, observation);
+    } catch {
+      result = transportError(400, -32600, 'Invalid Request');
+    }
+    const method = typeof request?.method === 'string' && ['GET', 'POST', 'DELETE'].includes(request.method.toUpperCase())
+      ? request.method.toLowerCase() : 'other';
+    const outcome = result.status < 400 ? 'succeeded' : result.status === 401 || result.status === 403 || result.status === 429 ? 'denied' : 'failed';
+    this.#observability.record(Object.freeze({ context: observation, component: 'mcp-http', operation: 'request', outcome,
+      duration_ms: performance.now() - started, attributes: Object.freeze({ method, status_code: result.status }) }));
+    return Object.freeze({ ...result, headers: Object.freeze({ ...result.headers,
+      'X-Correlation-ID': observation.correlation_id, traceparent: traceparent(observation) }) });
   }
 }
 

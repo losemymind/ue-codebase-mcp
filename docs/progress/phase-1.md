@@ -1002,3 +1002,45 @@ Known limitations and next work:
 - All earlier database, ACL, provider, corpus, revision-binding, object-store, MCP Inspector and G1 governance blockers remain explicit. Phase 2 remains frozen.
 
 Next work: keep the single `codex/phase-1-foundation` line and continue with P1-17 correlation IDs, redacted logging, metrics, traces and audit coverage over MCP and Agent/job paths. In parallel acceptance work, schedule live PostgreSQL multi-Agent fault injection and signed fixed-device service rehearsal; do not enter Phase 2.
+
+## P1-17 increment — redacted observability and correlated audit evidence
+
+Status: a shared content-safe log/trace/metrics boundary, durable correlated audit schema, MCP and Agent/job propagation and a Phase 1 Grafana dashboard are technically implemented on 2026-09-01. Live PostgreSQL migration, collector/Prometheus/Grafana deployment, protected metrics exposure and production load/fault exercises remain pending, so P1-17 is not formally accepted.
+
+Deliverables:
+
+- The shared observability package validates or generates UUID correlation IDs, accepts only exact W3C version-00 `traceparent` values with non-zero identifiers and creates a fresh span at every receiving service boundary. Invalid, duplicated or control-character-bearing carrier headers fail closed.
+- Structured logs and spans use one versioned closed record. They contain component, operation, outcome, severity, duration and correlation/trace/span identifiers plus a small allowlist of bounded operational attributes. Authorization, tokens, secret references, actor/job/project IDs, paths, queries, source excerpts, bodies and arbitrary messages are not accepted fields.
+- Sink exceptions never trigger a raw console or exception fallback. They are reduced to `ue_codebase_telemetry_dropped_total`; log and trace emission remain best effort while security audit persistence remains fail closed.
+- The Prometheus registry exports request counts, operation-duration histograms and dropped-record counts. Metric labels are limited to component, operation and outcome, so identities, correlation data, tools, errors and content cannot create cardinality or disclosure hazards.
+- MCP HTTP requests return their correlation and current trace headers. Recognized tool calls pass the observation context to the backend, emit redacted operation telemetry and persist actor, action, project/tool, outcome, request hash, stable error and correlation/trace/span evidence without raw arguments.
+- A Windows Agent iteration creates one observation context and propagates it through registration, claim, heartbeat, event, completion and failure HTTP calls. The coordinator creates a receiving span, emits aggregate endpoint outcomes and persists content-safe Agent/job audit records keyed by the request hash and protected resource identity.
+- Migration `0008_p1_17_observability_audit` backfills and makes correlation, trace and span identifiers mandatory on audit events, adds optional resource/error evidence and indexes correlation, trace and resource timelines. Its rollback removes only the P1-17 additions, and the destructive rehearsal now rolls version 8 down independently before the existing version chain.
+- The fixed parameterized PostgreSQL audit adapter validates all 13 event fields before issuing its single insert statement. Invalid identifiers, content-bearing tool/error fields, malformed hashes and short writes are returned only as `audit persistence failed`.
+- The committed Grafana dashboard covers operation rate, failure ratio, P95 duration, telemetry sink drops, aggregate Windows Agent iteration health and Agent/job API outcomes. Its PromQL references only the committed low-cardinality metric labels.
+- The operations runbook defines propagation, field exclusions, metrics, 90-day metrics retention, 30-day redacted trace retention and the P1-18 requirement for an authenticated or network-restricted metrics listener plus collector-side allowlists.
+
+Verification commands and results:
+
+```powershell
+node --test tests/unit/observability.test.mjs tests/unit/observability-assets.test.mjs tests/unit/windows-agent.test.mjs tests/compatibility/mcp-protocol.test.mjs tests/compatibility/streamable-http.test.mjs tests/compatibility/internal-job-http.test.mjs tests/integration/database-migrations.test.mjs
+npm run ci
+npm run release:check
+where.exe psql
+```
+
+- Focused observability, dashboard, migration, MCP, Agent and internal HTTP coverage passed 43/43. It covers carrier continuation/injection, fresh spans, closed telemetry attributes, secret/source canaries, low-cardinality Prometheus output, sink failure, fixed audit SQL, audit outage, job failure and lease-denial audit, Agent iteration behavior and reversible migration evidence.
+- Full repository CI passed 216/216. Formatting, security-boundary lint, build, permissive-license audit and CycloneDX generation with the existing declared native dependency passed.
+- Release policy passed for `0.1.0`. `where.exe psql` found no executable, so the migration and audit-query limitations below remain explicit.
+
+Known limitations and next work:
+
+- The package provides strict record and export ports, not production OpenTelemetry SDK, Prometheus scrape server or Grafana provisioning. P1-18 must bind them to authenticated/network-restricted listeners and approved collectors without introducing a raw-payload logging fallback.
+- The dashboard is statically validated but has not been imported into a live Grafana instance or exercised with production Prometheus data. Alert thresholds, capacity baselines, clock skew and retention enforcement need an operations review.
+- The audit migration and fixed insert adapter have static/synthetic evidence only while `psql` is unavailable. Backfill cost, index build duration, write amplification, live rollback and audit-query performance require a representative PostgreSQL rehearsal before acceptance.
+- MCP audit and Agent/job audit failure are fail closed at the service boundary, but their injected database port is not yet wired to a production pool. Agent/job mutations remain idempotent so a client can safely retry an ambiguous `503`, but deployment must verify audit failure ordering and transactional expectations under real database faults.
+- Metrics currently describe bounded operation rates, outcomes, duration and aggregate Agent health. Queue age, lease age, retry/fairness/starvation, disk pressure and process-resource metrics require approved bounded measurements from the production job database and Windows runtime; identities must never be promoted to metric labels.
+- Trace export is best effort and intentionally carries no source-derived payload. End-to-end sampling, collector authentication/TLS, backpressure, exporter shutdown and cross-service clock behavior remain deployment work.
+- All earlier database, ACL, provider, corpus, revision-binding, object-store, MCP Inspector, signed Agent and G1 governance blockers remain explicit. Phase 2 remains frozen.
+
+Next work: keep the single `codex/phase-1-foundation` line and continue with P1-18 container/Windows Service deployment baseline, while carrying the recorded P1-17 live PostgreSQL, collector/dashboard and fault-injection acceptance work. Do not enter Phase 2.

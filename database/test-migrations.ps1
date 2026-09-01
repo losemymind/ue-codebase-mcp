@@ -41,10 +41,15 @@ try {
     throw 'Bootstrap migration did not produce version 1.'
   }
 
-  Invoke-Runner 'up' 7
+  Invoke-Runner 'up' 8
   & $PsqlPath -X -v ON_ERROR_STOP=1 "--dbname=$DatabaseName" -f $constraintTest
   if ($LASTEXITCODE -ne 0) {
     throw "Live constraint test failed with exit code $LASTEXITCODE"
+  }
+
+  Invoke-Runner 'down' 7
+  if ((Invoke-Query "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'ue_mcp' AND table_name = 'audit_events' AND column_name = 'correlation_id';") -ne '0') {
+    throw 'P1-17 rollback left observability audit state behind.'
   }
 
   Invoke-Runner 'down' 6
@@ -77,9 +82,9 @@ try {
     throw 'Core rollback left business tables behind.'
   }
 
-  Invoke-Runner 'up' 7
-  if ((Invoke-Query 'SELECT max(version) FROM ue_mcp.schema_migrations;') -ne '7') {
-    throw 'Upgrade after rollback did not restore version 7.'
+  Invoke-Runner 'up' 8
+  if ((Invoke-Query 'SELECT max(version) FROM ue_mcp.schema_migrations;') -ne '8') {
+    throw 'Upgrade after rollback did not restore version 8.'
   }
 } finally {
   if ((Invoke-Query "SELECT to_regnamespace('ue_mcp') IS NOT NULL;") -eq 't') {

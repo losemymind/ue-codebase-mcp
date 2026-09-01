@@ -5,6 +5,7 @@ import {
   InternalJobHttpEndpoint,
 } from '../../services/index-coordinator/src/job-http.ts';
 import { DurableJobLeaseError } from '../../services/index-coordinator/src/job-lease.ts';
+import { ObservabilityRecorder } from '../../packages/observability/src/index.ts';
 
 const jobId = '20000000-0000-4000-8000-000000000001';
 const lease = {
@@ -28,8 +29,12 @@ function service(overrides = {}) {
   };
 }
 
-function endpoint(serviceValue = service(), authenticator = { async authenticate() { return { agent_id: 'agent-01' }; } }) {
-  return new InternalJobHttpEndpoint(serviceValue, authenticator, { allowed_hosts: ['coordinator.example.test'] });
+function endpoint(serviceValue = service(), authenticator = { async authenticate() { return { agent_id: 'agent-01' }; } }, audits = []) {
+  return new InternalJobHttpEndpoint(serviceValue, authenticator, {
+    allowed_hosts: ['coordinator.example.test'],
+    audit_sink: { async record(event) { audits.push(event); } },
+    observability: new ObservabilityRecorder({ emit() {} }),
+  });
 }
 
 function post(target, path, body, headerOverrides = {}) {
@@ -37,7 +42,8 @@ function post(target, path, body, headerOverrides = {}) {
 }
 
 test('internal job HTTP authenticates and routes protocol-v2 registration and claims', async () => {
-  const target = endpoint();
+  const audits = [];
+  const target = endpoint(service(), undefined, audits);
   const registered = await post(target, '/internal/v1/agents/register', {
     schema: 'ue-codebase-mcp/agent-register', version: 2, agent_id: 'agent-01', agent_version: '0.1.0',
     ue_version: '5.6', vcs: ['svn'], capabilities: ['svn-sync', 'clang-index', 'module-index'],
@@ -49,6 +55,10 @@ test('internal job HTTP authenticates and routes protocol-v2 registration and cl
   });
   assert.equal(claimed.status, 200);
   assert.equal(claimed.body, 'null');
+  assert.deepEqual(audits.map(({ action }) => action), ['agent.register', 'job.claim']);
+  assert.equal('agent-token' in audits[0], false);
+  assert.match(audits[0].request_hash, /^[a-f0-9]{64}$/u);
+  assert.equal(audits[0].correlation_id, registered.headers['X-Correlation-ID']);
 });
 
 test('internal job HTTP binds job IDs in paths and routes all fenced operations', async () => {
@@ -97,9 +107,46 @@ test('agent bearer adapter requires a service identity and agent:work scope', as
 });
 
 test('internal job HTTP maps durable failures to stable content-safe statuses', async () => {
-  const target = endpoint(service({ async claim() { throw new DurableJobLeaseError('database-failed'); } }));
+  const audits = [];
+  const target = endpoint(service({ async claim() { throw new DurableJobLeaseError('database-failed'); } }), undefined, audits);
   const result = await post(target, '/internal/v1/jobs/claim', {});
   assert.equal(result.status, 503);
   assert.deepEqual(JSON.parse(result.body), { error: 'database-failed' });
   assert.doesNotMatch(result.body, /database detail/u);
+  assert.equal(audits[0].outcome, 'failed');
+  assert.equal(audits[0].error_code, 'database-failed');
+});
+
+test('internal job HTTP propagates safe observation headers and fails closed when audit is unavailable', async () => {
+  const target = endpoint();
+  const correlation = '10000000-0000-4000-8000-000000000088';
+  const result = await post(target, '/internal/v1/jobs/claim', {
+    schema: 'ue-codebase-mcp/job-claim', version: 2, agent_id: 'agent-01', supported_kinds: ['reindex'], wait_ms: 0,
+  }, { 'x-correlation-id': correlation, traceparent: '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01' });
+  assert.equal(result.headers['X-Correlation-ID'], correlation);
+  assert.match(result.headers.traceparent, /^00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-[a-f0-9]{16}-01$/u);
+
+  const unavailable = new InternalJobHttpEndpoint(service(), { async authenticate() { return { agent_id: 'agent-01' }; } }, {
+    allowed_hosts: ['coordinator.example.test'], audit_sink: { async record() { throw new Error('SECRET audit detail'); } },
+    observability: new ObservabilityRecorder({ emit() {} }),
+  });
+  const failed = await post(unavailable, '/internal/v1/jobs/claim', {
+    schema: 'ue-codebase-mcp/job-claim', version: 2, agent_id: 'agent-01', supported_kinds: ['reindex'], wait_ms: 0,
+  });
+  assert.equal(failed.status, 503);
+  assert.deepEqual(JSON.parse(failed.body), { error: 'service_unavailable' });
+  assert.doesNotMatch(failed.body, /SECRET/u);
+});
+
+test('internal job HTTP audits fenced lease rejection as a denied resource action', async () => {
+  const audits = [];
+  const target = endpoint(service({ async heartbeat() { return { accepted: false, disposition: 'lease_lost' }; } }), undefined, audits);
+  const result = await post(target, `/internal/v1/jobs/${jobId}/heartbeat`, {
+    ...lease, progress_percent: 1, resources: { memory_mb: 1, cpu_percent: 1 },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(audits[0].action, 'job.heartbeat');
+  assert.equal(audits[0].outcome, 'denied');
+  assert.equal(audits[0].error_code, 'lease_lost');
+  assert.equal(audits[0].resource_id, jobId);
 });

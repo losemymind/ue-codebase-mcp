@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import {
   isReadOnlyToolName,
   parseToolArguments,
@@ -6,6 +7,13 @@ import {
   ToolContractError,
   type ReadOnlyToolName,
 } from '../../../packages/contracts/src/read-only-tools.ts';
+import {
+  assertObservationContext,
+  type ObservationContext,
+  type ObservabilityRecorder,
+  type SecurityAuditEvent,
+  type SecurityAuditSink,
+} from '../../../packages/observability/src/index.ts';
 import { CursorError, OpaqueCursorCodec } from './cursor.ts';
 
 export const MCP_PROTOCOL_VERSIONS = Object.freeze(['2025-11-25', '2025-06-18', '2025-03-26'] as const);
@@ -25,6 +33,7 @@ export interface ReadOnlyToolBackendRequest {
   readonly position?: string;
   readonly limit: number;
   readonly request_hash: string;
+  readonly observation: ObservationContext;
 }
 
 export interface ReadOnlyToolBackendResult {
@@ -36,23 +45,14 @@ export interface ReadOnlyToolBackend {
   execute(request: ReadOnlyToolBackendRequest): Promise<Readonly<ReadOnlyToolBackendResult>>;
 }
 
-export interface McpAuditEvent {
-  readonly principal_type: 'user' | 'service';
-  readonly principal_id: string;
-  readonly tool: ReadOnlyToolName;
-  readonly project_id: string | null;
-  readonly outcome: 'succeeded' | 'failed';
-  readonly request_hash: string;
-  readonly error_code: string | null;
-}
+export type McpAuditEvent = SecurityAuditEvent;
 
-export interface McpAuditSink {
-  record(event: McpAuditEvent): Promise<void>;
-}
+export interface McpAuditSink extends SecurityAuditSink {}
 
 export interface McpProtocolContext {
   readonly principal: McpPrincipal;
   readonly protocol_version?: string;
+  readonly observation: ObservationContext;
 }
 
 export interface McpProtocolReply {
@@ -182,17 +182,21 @@ export class ReadOnlyMcpServer {
   readonly #backend: ReadOnlyToolBackend;
   readonly #cursor: OpaqueCursorCodec;
   readonly #audit: McpAuditSink;
+  readonly #observability: ObservabilityRecorder;
   readonly #version: string;
 
-  constructor(backend: ReadOnlyToolBackend, cursor: OpaqueCursorCodec, audit: McpAuditSink, version = '0.1.0') {
+  constructor(backend: ReadOnlyToolBackend, cursor: OpaqueCursorCodec, audit: McpAuditSink,
+    observability: ObservabilityRecorder, version = '0.1.0') {
     if (typeof backend !== 'object' || backend === null || typeof backend.execute !== 'function'
         || !(cursor instanceof OpaqueCursorCodec) || typeof audit !== 'object' || audit === null || typeof audit.record !== 'function'
+        || typeof observability !== 'object' || observability === null || typeof observability.record !== 'function'
         || typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version)) {
       throw new TypeError('invalid MCP server configuration');
     }
     this.#backend = backend;
     this.#cursor = cursor;
     this.#audit = audit;
+    this.#observability = observability;
     this.#version = version;
   }
 
@@ -222,7 +226,9 @@ export class ReadOnlyMcpServer {
     return Object.freeze({ kind: 'response', body: jsonRpcResult(id, Object.freeze(result)) });
   }
 
-  async #callTool(id: string | number, params: unknown, principal: McpPrincipal): Promise<McpProtocolReply> {
+  async #callTool(id: string | number, params: unknown, context: McpProtocolContext): Promise<McpProtocolReply> {
+    const principal = context.principal;
+    const started = performance.now();
     const call = exactObject(params, ['name', 'arguments'], ['name']);
     if (call === undefined || !isReadOnlyToolName(call.name)) {
       return Object.freeze({ kind: 'response', body: jsonRpcError(id, -32602, 'Unknown or invalid tool') });
@@ -238,13 +244,19 @@ export class ReadOnlyMcpServer {
       const position = parsed.cursor === undefined ? undefined : this.#cursor.decode(binding, parsed.cursor);
       const backendResult = validateBackendResult(await this.#backend.execute(Object.freeze({
         tool: name, arguments: argumentsValue, principal, ...(position === undefined ? {} : { position }),
-        limit: parsed.limit, request_hash: hash,
+        limit: parsed.limit, request_hash: hash, observation: context.observation,
       })), parsed.limit);
       const structuredContent = Object.freeze({ items: backendResult.items,
         ...(backendResult.next_position === undefined ? {} : { next_cursor: this.#cursor.encode(binding, backendResult.next_position) }) });
       if (Buffer.byteLength(JSON.stringify(structuredContent), 'utf8') > MAX_RESULT_BYTES) throw new ToolExecutionError('response_too_large');
-      await this.#audit.record(Object.freeze({ principal_type: principal.type, principal_id: principal.id, tool: name,
-        project_id: projectId(argumentsValue), outcome: 'succeeded', request_hash: hash, error_code: null }));
+      const targetProject = projectId(argumentsValue);
+      await this.#audit.record(Object.freeze({ actor_type: principal.type, actor_id: principal.id, action: 'mcp.tool.call',
+        project_id: targetProject, tool: name, outcome: 'succeeded', request_hash: hash,
+        correlation_id: context.observation.correlation_id, trace_id: context.observation.trace_id,
+        span_id: context.observation.span_id, resource_type: targetProject === null ? null : 'project',
+        resource_id: targetProject, error_code: null }));
+      this.#observability.record(Object.freeze({ context: context.observation, component: 'mcp-server', operation: 'tool-call',
+        outcome: 'succeeded', duration_ms: performance.now() - started, attributes: Object.freeze({ tool: name }) }));
       const result = Object.freeze({
         content: Object.freeze([Object.freeze({ type: 'text', text: JSON.stringify(structuredContent) })]),
         structuredContent,
@@ -254,11 +266,21 @@ export class ReadOnlyMcpServer {
     } catch (cause) {
       const error = toolError(cause);
       try {
-        await this.#audit.record(Object.freeze({ principal_type: principal.type, principal_id: principal.id, tool: name,
-          project_id: projectId(argumentsValue), outcome: 'failed', request_hash: HASH.test(hash) ? hash : sha('invalid'), error_code: error.code }));
+        const targetProject = projectId(argumentsValue);
+        await this.#audit.record(Object.freeze({ actor_type: principal.type, actor_id: principal.id, action: 'mcp.tool.call',
+          project_id: targetProject, tool: name, outcome: 'failed', request_hash: HASH.test(hash) ? hash : sha('invalid'),
+          correlation_id: context.observation.correlation_id, trace_id: context.observation.trace_id,
+          span_id: context.observation.span_id, resource_type: targetProject === null ? null : 'project',
+          resource_id: targetProject, error_code: error.code }));
       } catch {
+        this.#observability.record(Object.freeze({ context: context.observation, component: 'mcp-server', operation: 'tool-call',
+          outcome: 'failed', duration_ms: performance.now() - started,
+          attributes: Object.freeze({ tool: name, error_code: 'audit-unavailable' }) }));
         return Object.freeze({ kind: 'response', body: jsonRpcResult(id, errorResult(new ToolExecutionError('temporarily_unavailable', true))) });
       }
+      this.#observability.record(Object.freeze({ context: context.observation, component: 'mcp-server', operation: 'tool-call',
+        outcome: 'failed', duration_ms: performance.now() - started,
+        attributes: Object.freeze({ tool: name, error_code: error.code }) }));
       return Object.freeze({ kind: 'response', body: jsonRpcResult(id, errorResult(error)) });
     }
   }
@@ -268,6 +290,7 @@ export class ReadOnlyMcpServer {
         || (context.protocol_version !== undefined && !MCP_PROTOCOL_VERSIONS.includes(context.protocol_version as typeof MCP_PROTOCOL_VERSIONS[number]))) {
       throw new TypeError('invalid MCP protocol context');
     }
+    assertObservationContext(context.observation);
     const envelope = exactObject(message, ['jsonrpc', 'id', 'method', 'params', 'result', 'error']);
     if (envelope === undefined || envelope.jsonrpc !== '2.0') {
       return Object.freeze({ kind: 'response', body: jsonRpcError(null, -32600, 'Invalid Request') });
@@ -311,7 +334,7 @@ export class ReadOnlyMcpServer {
     }
     if (envelope.method === 'ping') return Object.freeze({ kind: 'response', body: jsonRpcResult(id, Object.freeze({})) });
     if (envelope.method === 'tools/list') return this.#listTools(id, envelope.params, context.principal);
-    if (envelope.method === 'tools/call') return this.#callTool(id, envelope.params, context.principal);
+    if (envelope.method === 'tools/call') return this.#callTool(id, envelope.params, context);
     return Object.freeze({ kind: 'response', body: jsonRpcError(id, -32601, 'Method not found') });
   }
 }
