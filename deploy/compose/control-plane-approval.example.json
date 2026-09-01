@@ -1,0 +1,30 @@
+{
+  "schema": "ue-codebase-mcp/control-plane-image-approval",
+  "version": 1,
+  "status": "pending",
+  "approval_id": "PENDING",
+  "approved_by": "PENDING",
+  "approved_at": null,
+  "expires_at": null,
+  "image_reference": "registry.invalid/approved/ue-codebase-mcp-control-plane:0.1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "source_revision": "0000000000000000000000000000000000000000",
+  "node_version": "24.18.0",
+  "public_listener_port": 8080,
+  "operations_listener_port": 8081,
+  "sbom_path": "C:/ProgramData/UECodebaseMcp/approvals/control-plane.cdx.json",
+  "sbom_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "provenance_path": "C:/ProgramData/UECodebaseMcp/approvals/control-plane.provenance.json",
+  "provenance_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "capabilities": {
+    "database_pool": false,
+    "database_migrations": false,
+    "fresh_acl_scope": false,
+    "retrieval_backend": false,
+    "generation_store": false,
+    "audit_sink": false,
+    "object_store": false,
+    "authenticated_mcp_listener": false,
+    "protected_operations_listener": false,
+    "approved_observability_exporter": false
+  }
+}

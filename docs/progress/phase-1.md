@@ -1114,3 +1114,35 @@ Acceptance blockers and next work:
 - The earlier live PostgreSQL, MCP Inspector, ACL/provider/corpus/revision/object-store, collector/dashboard, fault-injection and G1 governance blockers remain in force. P1-18 must not be marked complete until the fixed-device rehearsal produces actual reviewed evidence. Phase 2 remains frozen.
 
 Next work: keep the single `codex/phase-1-foundation` line. On a suitably provisioned fixed device, supply only approved immutable images, TLS/secrets, service identity and signed current/previous packages; run preflight before any deployment mutation, then capture the clean install, TLS, health, restart, update and rollback rehearsal. Do not manufacture missing control-plane or device evidence, push the branch, or enter Phase 2.
+
+## P1-18 control-plane approval gate — production assembly still missing
+
+Status: the first deployment-input task was started on 2026-09-01 by inventorying the repository and making external control-plane approval a machine-checked preflight requirement. This is an approval boundary, not a control-plane implementation or image acceptance. No production image, SBOM, provenance or approval record was created, and P1-18 remains in progress.
+
+Inventory findings:
+
+- The repository has no control-plane process entrypoint: there is no production `createServer`/`listen` assembly that binds the MCP and operations ports.
+- Workspace packages declare no PostgreSQL driver/pool, object-store client or production telemetry exporter runtime dependency. MCP, retrieval, job, audit and operations components expose strict injected ports, not wired production adapters.
+- There is no control-plane Dockerfile, entrypoint or image-build pipeline. Creating an image from the current tree would therefore misrepresent unit-tested boundaries as a deployable production service.
+
+Approval-gate deliverables:
+
+- `control-plane-approval.schema.json` defines a closed version-1 record for the exact image reference, source revision, Node.js version, public/operations ports, approval identity and validity window, SBOM/provenance paths and hashes, and ten required production capabilities.
+- An approved record must declare the real database pool, migrations, fresh ACL scope, retrieval backend, generation store, audit sink, object store, authenticated MCP listener, protected operations listener and approved observability exporter as true. Approved records cannot use pending identities, `registry.invalid`, zero image/artifact hashes or a zero source revision.
+- `control-plane-approval.example.json` is intentionally pending, uses only zero hashes and declares every capability false. It documents the missing inputs and cannot pass preflight or serve as acceptance evidence.
+- Preflight now requires the approval record plus its independently supplied SHA-256. It rejects changed, duplicate-field, expired, pending, placeholder, incomplete or incorrectly typed records; verifies the referenced SBOM and provenance files by hash; and requires both `CONTROL_PLANE_IMAGE` and the rendered Compose model to use the exact case-sensitive approved image reference.
+
+Verification:
+
+```powershell
+powershell -NoProfile -Command "$ErrorActionPreference = 'Stop'; [void][scriptblock]::Create((Get-Content -LiteralPath 'deploy/compose/preflight.ps1' -Raw))"
+node --test tests/security/deployment-baseline.test.mjs tests/security/windows-service.test.mjs
+npm run ci
+npm run release:check
+```
+
+- Approval schema and example JSON parsed successfully. The preflight script parsed successfully in Windows PowerShell. Focused deployment/service static negative coverage passed 9/9.
+- Full repository CI passed 226/226, including formatting, security-boundary lint, build, permissive-license audit and CycloneDX generation. Release policy passed for `0.1.0`.
+- Docker and NGINX remain unavailable, so the strengthened preflight, Compose rendering, image inspection, TLS edge and fixed-device workflow were not executed. These static checks are not production image or deployment evidence.
+
+Next work: an externally accountable control-plane owner must implement the missing production entrypoint and adapters, build an immutable image from a reviewed source revision, generate and retain its SBOM and provenance, and obtain an independent time-bounded approval record/hash. Only after those real inputs exist may operations populate `CONTROL_PLANE_IMAGE` and run preflight on the fixed device. Do not convert the pending example, injected test ports or static CI into an approval claim; do not enter Phase 2.

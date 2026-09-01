@@ -2,13 +2,17 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const [compose, environmentExample, preflight, nginx, prometheus] = await Promise.all([
+const [compose, environmentExample, preflight, nginx, prometheus, approvalSchemaText, approvalExampleText] = await Promise.all([
   readFile('deploy/compose/compose.yaml', 'utf8'),
   readFile('deploy/compose/deployment.env.example', 'utf8'),
   readFile('deploy/compose/preflight.ps1', 'utf8'),
   readFile('deploy/reverse-proxy/nginx.conf', 'utf8'),
   readFile('deploy/monitoring/prometheus.yml', 'utf8'),
+  readFile('deploy/compose/control-plane-approval.schema.json', 'utf8'),
+  readFile('deploy/compose/control-plane-approval.example.json', 'utf8'),
 ]);
+const approvalSchema = JSON.parse(approvalSchemaText);
+const approvalExample = JSON.parse(approvalExampleText);
 
 test('Compose consumes only externally approved digest-required images', () => {
   const imageLines = [...compose.matchAll(/^\s+image:\s+(.+)$/gm)].map((match) => match[1]);
@@ -20,6 +24,23 @@ test('Compose consumes only externally approved digest-required images', () => {
   assert.doesNotMatch(compose, /:latest(?:@|\s|$)/i);
   assert.match(environmentExample, /CONTROL_PLANE_IMAGE=registry\.invalid\/approved\/ue-codebase-mcp-control-plane:0\.1\.0@sha256:0{64}/);
   assert.match(environmentExample, /EDGE_PROXY_IMAGE=registry\.invalid\/approved\/nginx:1\.28\.0-alpine3\.21@sha256:0{64}/);
+});
+
+test('control-plane approval contract cannot present the repository template as approved', () => {
+  assert.equal(approvalSchema.additionalProperties, false);
+  assert.deepEqual(approvalSchema.properties.status.enum, ['pending', 'approved']);
+  assert.equal(approvalSchema.properties.capabilities.additionalProperties, false);
+  assert.equal(approvalSchema.properties.capabilities.required.length, 10);
+  assert.equal(approvalSchema.allOf[0].if.properties.status.const, 'approved');
+  assert.ok(Object.values(approvalSchema.allOf[0].then.properties.capabilities.properties)
+    .every((definition) => definition.const === true));
+  assert.equal(approvalExample.status, 'pending');
+  assert.match(approvalExample.image_reference, /^registry\.invalid\//);
+  assert.match(approvalExample.image_reference, /@sha256:0{64}$/);
+  assert.equal(approvalExample.source_revision, '0'.repeat(40));
+  assert.equal(approvalExample.sbom_sha256, '0'.repeat(64));
+  assert.equal(approvalExample.provenance_sha256, '0'.repeat(64));
+  assert.ok(Object.values(approvalExample.capabilities).every((value) => value === false));
 });
 
 test('Compose isolates edge, data, and observability and mounts file secrets', () => {
@@ -63,6 +84,13 @@ test('deployment preflight is non-mutating and rejects unsafe inputs before depl
   assert.match(preflight, /FileAttributes\]::ReparsePoint/);
   assert.match(preflight, /EnvironmentFile TLS bindings must match/);
   assert.match(preflight, /secret bindings must exactly match/);
+  assert.match(preflight, /ExpectedControlPlaneApprovalSha256 must not be a placeholder/);
+  assert.match(preflight, /ControlPlaneApprovalFile hash did not match the independently approved value/);
+  assert.match(preflight, /status -ne 'approved'/);
+  assert.match(preflight, /Every required control-plane capability must be explicitly approved/);
+  assert.match(preflight, /CONTROL_PLANE_IMAGE must exactly match the independently approved image reference/);
+  assert.match(preflight, /Assert-ArtifactHash -Path \$resolvedSbom/);
+  assert.match(preflight, /Assert-ArtifactHash -Path \$resolvedProvenance/);
   assert.match(preflight, /BEGIN CERTIFICATE/);
   assert.match(preflight, /PRIVATE KEY/);
   assert.match(preflight, /registry\\\.invalid/);

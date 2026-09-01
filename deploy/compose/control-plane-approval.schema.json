@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ue-codebase-mcp.invalid/schemas/control-plane-approval-v1.json",
+  "title": "UE Codebase MCP control-plane image approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "status",
+    "approval_id",
+    "approved_by",
+    "approved_at",
+    "expires_at",
+    "image_reference",
+    "source_revision",
+    "node_version",
+    "public_listener_port",
+    "operations_listener_port",
+    "sbom_path",
+    "sbom_sha256",
+    "provenance_path",
+    "provenance_sha256",
+    "capabilities"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ue-codebase-mcp/control-plane-image-approval"
+    },
+    "version": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "approved"
+      ]
+    },
+    "approval_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]+$"
+    },
+    "approved_by": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@\\\\/-]+$"
+    },
+    "approved_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "image_reference": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^.+:[^/@]+@sha256:[a-f0-9]{64}$"
+    },
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "node_version": {
+      "const": "24.18.0"
+    },
+    "public_listener_port": {
+      "const": 8080
+    },
+    "operations_listener_port": {
+      "const": 8081
+    },
+    "sbom_path": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 1024
+    },
+    "sbom_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "provenance_path": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 1024
+    },
+    "provenance_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "database_pool",
+        "database_migrations",
+        "fresh_acl_scope",
+        "retrieval_backend",
+        "generation_store",
+        "audit_sink",
+        "object_store",
+        "authenticated_mcp_listener",
+        "protected_operations_listener",
+        "approved_observability_exporter"
+      ],
+      "properties": {
+        "database_pool": {
+          "type": "boolean"
+        },
+        "database_migrations": {
+          "type": "boolean"
+        },
+        "fresh_acl_scope": {
+          "type": "boolean"
+        },
+        "retrieval_backend": {
+          "type": "boolean"
+        },
+        "generation_store": {
+          "type": "boolean"
+        },
+        "audit_sink": {
+          "type": "boolean"
+        },
+        "object_store": {
+          "type": "boolean"
+        },
+        "authenticated_mcp_listener": {
+          "type": "boolean"
+        },
+        "protected_operations_listener": {
+          "type": "boolean"
+        },
+        "approved_observability_exporter": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "approved"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "approval_id": {
+            "not": {
+              "enum": [
+                "PENDING",
+                "PLACEHOLDER"
+              ]
+            }
+          },
+          "approved_by": {
+            "not": {
+              "enum": [
+                "PENDING",
+                "PLACEHOLDER"
+              ]
+            }
+          },
+          "approved_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "image_reference": {
+            "allOf": [
+              {
+                "not": {
+                  "pattern": "^registry\\.invalid/"
+                }
+              },
+              {
+                "not": {
+                  "pattern": "@sha256:0{64}$"
+                }
+              }
+            ]
+          },
+          "source_revision": {
+            "not": {
+              "const": "0000000000000000000000000000000000000000"
+            }
+          },
+          "sbom_sha256": {
+            "not": {
+              "const": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          "provenance_sha256": {
+            "not": {
+              "const": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          "capabilities": {
+            "properties": {
+              "database_pool": {
+                "const": true
+              },
+              "database_migrations": {
+                "const": true
+              },
+              "fresh_acl_scope": {
+                "const": true
+              },
+              "retrieval_backend": {
+                "const": true
+              },
+              "generation_store": {
+                "const": true
+              },
+              "audit_sink": {
+                "const": true
+              },
+              "object_store": {
+                "const": true
+              },
+              "authenticated_mcp_listener": {
+                "const": true
+              },
+              "protected_operations_listener": {
+                "const": true
+              },
+              "approved_observability_exporter": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
