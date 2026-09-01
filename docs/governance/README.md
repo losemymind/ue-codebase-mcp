@@ -18,3 +18,9 @@ The inactive team mode already separates control-plane, security/release, operat
 Switching back to solo also changes only `active_mode`, but it lowers assurance and makes G1 ineligible. Mode policy fields must not be edited to bypass that boundary.
 
 CODEOWNERS routes code review but cannot enforce the project's five-way approval separation by itself. On GitHub, a repository administrator must create a branch ruleset for the protected branch, require the `ci / verify` status check, prevent bypass as appropriate, and select the required review count. Solo mode must not label the owner's own review as independent approval. When team mode becomes active, the ruleset must require independent reviewers consistent with the configured security/release and G1 roles.
+
+## Current GitHub enforcement
+
+The active repository ruleset [`Solo phase-1 protection`](https://github.com/losemymind/ue-codebase-mcp/settings/rules/22003444) targets only `codex/phase-1-foundation`. It blocks branch deletion and force pushes, requires pull requests with zero approvals, and requires the GitHub Actions `verify` check with the branch up to date. CODEOWNER review and approval by another person are disabled in solo mode.
+
+The `Repository admin` role has `Always allow` bypass so the personal owner can continue the approved single-branch workflow without creating a second development line. An administrator's direct push therefore bypasses the pre-merge PR/status requirements; GitHub Actions still runs after the push. This bypass is a declared solo-mode limitation and must be removed or narrowed when team mode is activated.

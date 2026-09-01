@@ -1174,3 +1174,14 @@ Acceptance boundary and next work:
 - Personal operation may use the active solo mapping, but any approval it issues remains self-attested and cannot satisfy an independent G1 signature.
 - Before team activation, replace all five `github-team:UNCONFIGURED/...` principals with real `github-team:<organization>/<team>` subjects, mark them configured, validate while still in solo mode, change only `active_mode` to `team`, run `npm run governance:sync`, then align branch protection externally.
 - This checkpoint does not supply the missing production control-plane assembly, immutable image, SBOM/provenance, fixed-device inputs or rehearsal evidence. P1-18 remains in progress and Phase 2 remains frozen.
+
+## P1-18 GitHub Solo governance checkpoint — active ruleset with declared admin bypass
+
+Status: the public GitHub repository was initialized from the existing `codex/phase-1-foundation` branch on 2026-09-01. The first GitHub Actions `ci / verify` run completed successfully. An active repository ruleset now protects that exact branch without creating another branch or worktree.
+
+- `Solo phase-1 protection` targets only `codex/phase-1-foundation`, blocks deletion and force pushes, requires pull requests with zero approvals, and requires the GitHub Actions `verify` check with the branch up to date.
+- CODEOWNER review and approval of the latest push by another person remain disabled. Solo approvals therefore remain self-attested and G1-ineligible.
+- `Repository admin` has `Always allow` bypass. This preserves the approved single-branch personal workflow and allows the owner to push directly, but those owner pushes bypass pre-merge enforcement and receive CI only after the push. The bypass is an explicit residual risk, not independent approval evidence.
+- When team mode is activated, remove or narrow the administrator bypass, require independent reviewers, and revalidate the ruleset against the configured GitHub Teams. The current solo ruleset must not be presented as team governance.
+
+This checkpoint changes repository governance only. It does not create the missing production control-plane assembly, deployment inputs or fixed-device rehearsal evidence; P1-18 remains in progress and Phase 2 remains frozen.
