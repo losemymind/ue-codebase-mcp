@@ -39,6 +39,21 @@ disposable PostgreSQL database with pgvector available, then run:
 npm run db:test:live
 ```
 
+On Windows x64, the repository can detect and, after explicit confirmation,
+install an isolated Docker Desktop-backed PostgreSQL 17 + pgvector test
+environment. It keeps credentials outside the repository and runs both live
+database harnesses automatically:
+
+```powershell
+npm run env:db:status
+npm run env:db:install
+```
+
+Use `npm run env:db:uninstall` when finished. If the managed database volume
+exists, removal requires either a validated `pg_dump` backup in a user-selected
+directory or an explicit data-loss confirmation. See
+`tools/live-database/README.md` for the dependency, backup and removal boundary.
+
 This exercises an empty upgrade, upgrade from bootstrap version 1, negative data
 constraints, rollback to version 1, re-upgrade to version 2, and full rollback.
 It is intentionally opt-in and is not replaced by a mocked production result.

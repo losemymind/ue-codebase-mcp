@@ -1282,3 +1282,37 @@ Acceptance blockers and next work:
 - A disposable representative PostgreSQL plus pgvector environment must run the complete version-9 migration/rollback rehearsal and the non-mutating runtime harness. Production grants, TLS identity, secret-file ACLs, image approval and fixed-device evidence remain external inputs. Solo self-attestation remains G1-ineligible and Phase 2 remains frozen.
 
 Next work: keep the single `codex/phase-1-foundation` line. Bind the existing authorized retrieval and MCP tool contracts to reviewed fixed PostgreSQL statements, then enforce the request-plus-audit transaction expectation without weakening the explicit live database, ACL collector, image or fixed-device blockers. Do not enter Phase 2.
+
+## P1-18 local PostgreSQL + pgvector environment manager — runtime acceptance pending
+
+Status: a Windows x64 installer, verifier, backup workflow and uninstaller for one isolated local PostgreSQL 17 + pgvector test environment were technically implemented on 2026-09-02. The read-only detector was run on this workstation, but dependency installation and database creation require explicit human confirmation and were not performed. This checkpoint supplies a repeatable path to the previously blocked live database exercises; it is not their evidence, a production control-plane deployment or fixed-device acceptance. P1-18 remains in progress.
+
+Deliverables:
+
+- `tools/live-database/manage-environment.ps1` detects the exact repository Node.js/npm versions, WSL 2, firmware virtualization, Docker Desktop/CLI/engine and fixed managed Docker resources. Missing dependencies are installed only after exact `YES` or explicit non-interactive acceptance; existing mismatched Node.js is never replaced automatically, and WSL is treated as shared infrastructure that is never automatically removed.
+- Node.js fallback installation uses the official versioned MSI with a fixed SHA-256. Docker Desktop uses its exact WinGet identity when available or the official Windows installer after Authenticode and size validation. The interactive Docker license decision is explicit.
+- The database is bound only to `127.0.0.1:55432`, uses fixed names and the exact `pgvector/pgvector:0.8.6-pg17` tag, records the pulled immutable repository digest and then creates from that digest. Password and DSN files remain outside the repository under a protected state root; state and backup manifests contain no credential.
+- Verification uses the container's fixed database role through a restricted `psql` adapter. It runs the complete destructive nine-migration rollback/re-upgrade workflow, reapplies the final schema, runs the real control-plane PostgreSQL pool/transaction/readiness harness and confirms the live pgvector extension version.
+- Uninstall treats the managed volume as user data. By default it requests a fully qualified backup directory, writes a custom-format `pg_dump` through a temporary file, validates the `PGDMP` header, atomically publishes the dump, computes SHA-256 and writes a protected manifest before deletion. Skipping backup requires a second exact data-loss phrase; non-interactive deletion also requires an explicit switch.
+- Only fixed resources carrying both management labels can be used or removed. Node.js and Docker Desktop removal is opt-in and limited to dependencies recorded as installed by this tool. A protected receipt survives interrupted setup and retained-dependency database removal; Docker Desktop removal fails closed if any unmanaged Docker data exists.
+
+Verification and observed environment:
+
+```powershell
+powershell -NoProfile -Command "$ErrorActionPreference = 'Stop'; Get-ChildItem -LiteralPath 'tools/live-database' -Filter '*.ps1' | ForEach-Object { [void][scriptblock]::Create((Get-Content -LiteralPath $_.FullName -Raw)) }"
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/live-database/manage-environment.ps1 -Action Status
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/live-database/manage-environment.ps1 -Action Install -AcceptInstall -WhatIf
+node --test --test-reporter=spec tests/security/live-database-environment.test.mjs
+npm run ci
+npm run release:check
+```
+
+- All four PowerShell entrypoint/manager scripts parsed successfully. Final focused environment-manager coverage passed 6/6; complete repository CI passed 255/255, including formatting, security-boundary lint, governance synchronization, build, license policy and CycloneDX generation with 15 dependency components. Release policy passed for `0.1.0`.
+- The detector reported Node.js `v24.18.0`, npm `11.16.0` and WSL 2 ready. WinGet and Docker were missing, firmware virtualization could not be determined, and no managed state, container or volume existed. `Status` did not create the default state root; `Install -WhatIf` performed no mutation.
+- No installer was downloaded or executed, no Docker license was accepted, no container/image/volume/database was created, and neither live database harness ran. Therefore there is no live PostgreSQL, pgvector, migration, production control-plane or fixed-device success evidence in this checkpoint.
+
+Human action and remaining boundary:
+
+- On this workstation, run `npm run env:db:install`, review each prompt and type `YES` only if installing WSL/Docker Desktop and accepting Docker Desktop's license is intended. A Windows restart or Docker Desktop first-run confirmation may be required; rerun the command afterward. The tool then creates the disposable loopback database and runs the real harnesses.
+- When the environment is no longer needed, run `npm run env:db:uninstall`, choose a fully qualified backup directory and retain the generated dump plus manifest. Removing shared dependencies requires the separate `-RemoveManagedDependencies` option and another confirmation.
+- Even after successful local database verification, the authorized retrieval/tool SQL, request-plus-audit transaction assembly, object storage, production image approval and clean fixed-device rehearsal remain separate blockers. Do not reinterpret this development helper as production assembly or enter Phase 2.
