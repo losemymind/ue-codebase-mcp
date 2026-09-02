@@ -19,6 +19,7 @@ test('environment manager detects exact dependencies and requires confirmation b
   assert.match(manager, /Docker\.DockerDesktop/);
   assert.match(manager, /official-download fallback available/);
   assert.match(manager, /Test-WslReady/);
+  assert.match(manager, /HypervisorPresent -eq \$true/);
   assert.match(manager, /VirtualizationFirmwareEnabled/);
   assert.match(manager, /Read-Host "\$Message Type YES to continue"/);
   assert.match(manager, /--accept-source-agreements --accept-package-agreements --disable-interactivity/);

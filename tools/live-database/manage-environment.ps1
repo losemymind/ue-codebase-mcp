@@ -158,6 +158,8 @@ function Test-WslReady {
 
 function Get-VirtualizationStatus {
   try {
+    $systems = @(Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop)
+    if ($systems.Count -eq 1 -and $systems[0].HypervisorPresent -eq $true) { return $true }
     $processors = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop)
     if ($processors.Count -eq 0) { return $null }
     return -not ($processors | Where-Object { -not $_.VirtualizationFirmwareEnabled })

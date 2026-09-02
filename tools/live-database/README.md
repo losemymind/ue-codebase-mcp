@@ -7,6 +7,8 @@ installer and does not make the control-plane image deployable.
 The manager detects the repository-pinned Node.js/npm versions, WSL 2, firmware
 virtualization, Docker Desktop/CLI/engine, its fixed container and its fixed data
 volume. `Status` is read-only and does not create its state directory.
+An already running Windows hypervisor is accepted as stronger virtualization
+evidence because Hyper-V can mask the lower-level processor firmware flag.
 
 ## Install
 

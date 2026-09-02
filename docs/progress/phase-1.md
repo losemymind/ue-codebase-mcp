@@ -1309,6 +1309,7 @@ npm run release:check
 
 - All four PowerShell entrypoint/manager scripts parsed successfully. Final focused environment-manager coverage passed 6/6; complete repository CI passed 255/255, including formatting, security-boundary lint, governance synchronization, build, license policy and CycloneDX generation with 15 dependency components. Release policy passed for `0.1.0`.
 - The detector reported Node.js `v24.18.0`, npm `11.16.0` and WSL 2 ready. WinGet and Docker were missing, firmware virtualization could not be determined, and no managed state, container or volume existed. `Status` did not create the default state root; `Install -WhatIf` performed no mutation.
+- A subsequent real-shell install attempt exposed a Windows Hyper-V detection edge case: `Win32_Processor.VirtualizationFirmwareEnabled` was false while `Win32_ComputerSystem.HypervisorPresent` was true. The detector now treats an already running hypervisor as stronger positive evidence before consulting processor firmware flags; no BIOS change was inferred or requested from that contradictory signal.
 - No installer was downloaded or executed, no Docker license was accepted, no container/image/volume/database was created, and neither live database harness ran. Therefore there is no live PostgreSQL, pgvector, migration, production control-plane or fixed-device success evidence in this checkpoint.
 
 Human action and remaining boundary:
