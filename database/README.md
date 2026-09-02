@@ -43,6 +43,23 @@ This exercises an empty upgrade, upgrade from bootstrap version 1, negative data
 constraints, rollback to version 1, re-upgrade to version 2, and full rollback.
 It is intentionally opt-in and is not replaced by a mocked production result.
 
+After all eight Phase 1 migrations are applied, place an explicit PostgreSQL URI
+in a regular secret file. The URI must contain credentials and an explicit
+`sslmode` of `disable`, `require`, `verify-ca`, or `verify-full`; select a mode
+that matches the approved deployment network and certificate policy. Set only
+the file path in `UE_MCP_DATABASE_DSN_FILE`, then exercise the real control-plane
+pool, exact migration checksums, a fixed named query, a transaction, and pool
+shutdown with:
+
+```powershell
+$env:UE_MCP_DATABASE_DSN_FILE = 'C:\approved-secrets\control-plane-dsn'
+npm run control-plane:db:test:live
+```
+
+The command never prints the URI, database identity, user, query error or server
+diagnostic. It is an opt-in non-mutating runtime check, not a substitute for the
+destructive disposable-database migration test or fixed-device rehearsal.
+
 The schema stores provider/model dimensions with each embedding. It includes a
 1536-dimension cosine HNSW baseline. When P1-12 receives the approved embedding
 provider configuration, it must add partial ANN indexes for any other selected

@@ -1215,3 +1215,36 @@ Acceptance blockers and next work:
 - No control-plane Dockerfile or image is produced by this checkpoint. The pending approval example and placeholder Compose image must remain unusable until the real assembly, SBOM, provenance and time-bounded approval exist.
 - Next implementation work is the reviewed PostgreSQL runtime boundary and fixed-statement adapters needed by authentication, authorization, retrieval, audit and readiness. Live acceptance still requires a representative PostgreSQL plus pgvector environment; fixed-device TLS/update/rollback rehearsal remains a separate blocker.
 - Solo ownership and the GitHub ruleset do not convert this checkpoint into independent G1 approval. Phase 2 remains frozen.
+
+## P1-18 PostgreSQL runtime boundary checkpoint — application adapters still missing
+
+Status: the real Node.js PostgreSQL connection-pool, transaction and migration-readiness boundary was implemented on 2026-09-02. It is a production-capable infrastructure adapter but is not yet a complete control-plane assembly. Authentication/authorization and MCP retrieval repositories still require reviewed fixed SQL adapters, and no live PostgreSQL service is available on this workstation. P1-18 remains in progress and is not accepted.
+
+Deliverables:
+
+- The control-plane workspace now pins `pg` exactly at `8.23.0`. Its 14 locked npm packages use only MIT or ISC licenses, are represented in the generated CycloneDX SBOM, and have an exact machine-checked notice policy. `npm audit --omit=dev` reported zero known vulnerabilities at the time of this checkpoint.
+- `services/control-plane/src/postgres.ts` creates one bounded pool with finite connection, statement, lock, idle-transaction, idle-client and connection-lifetime limits. Channel binding is enabled when the server supports it, clients use keepalive, idle-pool errors are consumed by the readiness state, and shutdown drains the pool.
+- The database URI is read only from an absolute regular secret file. Every path component is checked against symbolic-link/junction redirection, the opened file identity is rechecked to reduce replacement races, UTF-8 and size are bounded, credentials are required, and `sslmode` must be explicit. URI content and driver diagnostics are never returned in runtime errors.
+- Runtime queries require a pre-approved statement name and exact SQL text, use parameter arrays and object rows, and enforce value/result bounds. Transactions acquire one client, issue `BEGIN`/`COMMIT`, always release it, roll back operation failures and destroy the client if rollback fails.
+- Readiness queries the complete `ue_mcp.schema_migrations` history and requires the exact contiguous version, name and SHA-256 checksum policy computed from the packaged manifest and every checked-in up migration. The deterministic build now carries those migration artifacts.
+- `npm run control-plane:db:test:live` is an explicit non-mutating live harness. Given `UE_MCP_DATABASE_DSN_FILE`, it checks the real pool, all eight migrations, a fixed named query, a transaction and shutdown while emitting only a uniform pass/fail message.
+
+Verification:
+
+```powershell
+npm ci --ignore-scripts
+node --test tests/unit/postgres-runtime.test.mjs
+npm run ci
+npm run release:check
+npm audit --omit=dev
+```
+
+- Clean lockfile installation passed. Focused PostgreSQL runtime coverage passed 6/6, including unapproved SQL/text drift, bounded values/results, redacted driver errors, commit/rollback/release behavior, failed-rollback client destruction, exact migration readiness, secret-file confinement and unsafe URI rejection.
+- Full repository CI passed 241/241. Build, formatting, security-boundary lint, governance synchronization, license/notices policy and CycloneDX generation passed; the SBOM contains 15 dependency components including the existing hash-pinned native runtime. Release policy passed for `0.1.0`.
+- The live harness was invoked without a secret input and failed with only its uniform error, as required. Neither `psql` nor Docker is installed and no PostgreSQL endpoint was supplied, so no connection, server-side transaction, migration-readiness or pgvector runtime success is claimed.
+
+Acceptance blockers and next work:
+
+- The generic runtime does not itself approve application SQL. Next implementation work is to bind reviewed fixed statements for bearer-token persistence and authorization snapshots, followed by retrieval/tool routing, audit transaction expectations and object storage. Until those adapters are assembled, there is still no runnable production `main` or truthful control-plane image.
+- A representative PostgreSQL plus pgvector environment must run both the destructive disposable migration test and the non-mutating control-plane runtime harness. Those future results must record the actual approved server and artifact context rather than reclassifying unit tests as live evidence.
+- Production TLS mode, database identity/grants, secret-file ACLs, image/SBOM/provenance approval and fixed-device deployment evidence remain external inputs. Solo self-attestation remains G1-ineligible and Phase 2 remains frozen.

@@ -1,0 +1,20 @@
+{
+  "schema": "ue-codebase-mcp/npm-notices",
+  "version": 1,
+  "packages": [
+    { "name": "pg", "version": "8.23.0", "license": "MIT" },
+    { "name": "pg-cloudflare", "version": "1.4.0", "license": "MIT" },
+    { "name": "pg-connection-string", "version": "2.14.0", "license": "MIT" },
+    { "name": "pg-int8", "version": "1.0.1", "license": "ISC" },
+    { "name": "pg-pool", "version": "3.14.0", "license": "MIT" },
+    { "name": "pg-protocol", "version": "1.16.0", "license": "MIT" },
+    { "name": "pg-types", "version": "2.2.0", "license": "MIT" },
+    { "name": "pgpass", "version": "1.0.5", "license": "MIT" },
+    { "name": "postgres-array", "version": "2.0.0", "license": "MIT" },
+    { "name": "postgres-bytea", "version": "1.0.1", "license": "MIT" },
+    { "name": "postgres-date", "version": "1.0.7", "license": "MIT" },
+    { "name": "postgres-interval", "version": "1.2.0", "license": "MIT" },
+    { "name": "split2", "version": "4.2.0", "license": "ISC" },
+    { "name": "xtend", "version": "4.0.2", "license": "MIT" }
+  ]
+}

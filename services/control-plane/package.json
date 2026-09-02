@@ -5,9 +5,13 @@
   "license": "UNLICENSED",
   "type": "module",
   "exports": {
-    ".": "./src/host.ts"
+    ".": "./src/host.ts",
+    "./postgres": "./src/postgres.ts"
   },
   "engines": {
     "node": "24.18.0"
+  },
+  "dependencies": {
+    "pg": "8.23.0"
   }
 }

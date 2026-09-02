@@ -20,6 +20,7 @@
     "build": "node tools/build.mjs",
     "clean": "node tools/clean.mjs",
     "compile-db:audit": "node tools/audit-compile-database.mjs",
+    "control-plane:db:test:live": "node tools/verify-control-plane-postgres.mjs",
     "ci": "npm run format:check && npm run lint && npm run governance:check && npm test && npm run build && npm run license:check && npm run sbom",
     "db:migrate": "powershell -NoProfile -File database/migrate.ps1 -Action up",
     "db:rollback": "powershell -NoProfile -File database/migrate.ps1 -Action down",

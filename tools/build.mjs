@@ -17,6 +17,7 @@ await import('../apps/mcp-server/src/server.ts');
 await import('../apps/mcp-server/src/operations-http.ts');
 await import('../apps/mcp-server/src/streamable-http.ts');
 await import('../services/control-plane/src/host.ts');
+await import('../services/control-plane/src/postgres.ts');
 await import('../workers/svn-adapter/src/index.ts');
 await import('../workers/windows-agent/src/index.ts');
 await import('../services/index-coordinator/src/workspace.ts');
@@ -49,6 +50,7 @@ await mkdir(path.join(configPackageDist, 'src'), { recursive: true });
 await cp(path.join(root, 'packages', 'config', 'package.json'), path.join(configPackageDist, 'package.json'));
 await cp(path.join(root, 'packages', 'config', 'src', 'index.ts'), path.join(configPackageDist, 'src', 'index.ts'));
 await cp(path.join(root, 'configs'), path.join(dist, 'configs'), { recursive: true, force: true });
+await cp(path.join(root, 'database', 'migrations'), path.join(dist, 'database', 'migrations'), { recursive: true, force: true });
 for (const source of ['apps/mcp-server', 'packages/auth', 'packages/contracts', 'packages/observability', 'packages/provider-sdk', 'services/control-plane', 'services/index-coordinator', 'services/retrieval', 'workers/clang-indexer', 'workers/svn-adapter', 'workers/windows-agent']) {
   await cp(path.join(root, source), path.join(dist, source), { recursive: true, force: true });
 }

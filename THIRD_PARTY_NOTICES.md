@@ -10,3 +10,12 @@ Release artifacts that contain `libclang.dll` include the complete vendor-provid
 - Required accompanying material: the hash-pinned Visual Studio `ThirdPartyNotices.txt`, including the Clang notice, Apache License terms, LLVM exception, legacy notices, and bundled third-party notices
 
 The runtime package policy intentionally fails closed if either the DLL or source notice hash changes. A Visual Studio or LLVM update therefore requires explicit license review, SBOM/version updates, reproducibility verification, and a policy change; the packager never substitutes a nearby runtime or notice file.
+
+## Node.js PostgreSQL runtime
+
+The control-plane PostgreSQL boundary uses `pg` 8.23.0 and its locked transitive packages. The reviewed versions and SPDX license identifiers are recorded in `tools/license-audit/notices.json`; repository CI requires that list to match every downloadable npm package in `package-lock.json` exactly.
+
+- MIT: `pg`, `pg-cloudflare`, `pg-connection-string`, `pg-pool`, `pg-protocol`, `pg-types`, `pgpass`, `postgres-array`, `postgres-bytea`, `postgres-date`, `postgres-interval`, and `xtend`.
+- ISC: `pg-int8` and `split2`.
+
+Redistributed installations and images must retain the copyright and license files shipped in each npm package. A dependency version, package set or license change requires an explicit notice-policy update, license review, SBOM regeneration and CI approval.
