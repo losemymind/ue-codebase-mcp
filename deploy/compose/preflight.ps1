@@ -44,7 +44,7 @@ function Resolve-DeploymentInput {
     if (($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
       throw "$Label and its existing parent path must not contain a reparse point."
     }
-    $parentPath = Split-Path -LiteralPath $current.FullName -Parent
+    $parentPath = Split-Path -LiteralPath $current.FullName
     if ([string]::IsNullOrEmpty($parentPath) -or $parentPath -eq $current.FullName) { break }
     $current = Get-Item -LiteralPath $parentPath -Force
   }

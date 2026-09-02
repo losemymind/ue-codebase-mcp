@@ -70,7 +70,7 @@ function Assert-NoReparsePoint {
 
   $currentPath = $Path
   while (-not (Test-Path -LiteralPath $currentPath)) {
-    $parent = Split-Path -LiteralPath $currentPath -Parent
+    $parent = Split-Path -LiteralPath $currentPath
     if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $currentPath) { break }
     $currentPath = $parent
   }
@@ -79,7 +79,7 @@ function Assert-NoReparsePoint {
     if (($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
       throw "$Label and its existing parent path must not contain a reparse point."
     }
-    $parentPath = Split-Path -LiteralPath $current.FullName -Parent
+    $parentPath = Split-Path -LiteralPath $current.FullName
     if ([string]::IsNullOrWhiteSpace($parentPath) -or $parentPath -eq $current.FullName) { break }
     $current = Get-Item -LiteralPath $parentPath -Force
   }
@@ -152,8 +152,10 @@ function Get-ToolVersion {
 
 function Test-WslReady {
   if ($null -eq (Get-Application -Name 'wsl')) { return $false }
-  & wsl.exe --version 2>$null | Out-Null
-  return $LASTEXITCODE -eq 0
+  try {
+    & wsl.exe --version 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+  } catch { return $false }
 }
 
 function Get-VirtualizationStatus {
@@ -253,8 +255,10 @@ function Find-DockerInstaller {
 
 function Test-DockerEngine {
   if ($null -eq (Get-Application -Name 'docker')) { return $false }
-  & docker info --format '{{.OSType}}' 2>$null | Out-Null
-  return $LASTEXITCODE -eq 0
+  try {
+    & docker info --format '{{.OSType}}' 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+  } catch { return $false }
 }
 
 function Wait-DockerEngine {
@@ -431,8 +435,19 @@ function Test-DockerObject {
     [Parameter(Mandatory = $true)][ValidateSet('container', 'volume')][string]$Kind,
     [Parameter(Mandatory = $true)][string]$Name
   )
-  & docker $Kind inspect $Name 2>$null | Out-Null
-  return $LASTEXITCODE -eq 0
+  try {
+    & docker $Kind inspect $Name 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+  } catch { return $false }
+}
+
+function Test-DockerImage {
+  param([Parameter(Mandatory = $true)][string]$Reference)
+
+  try {
+    & docker image inspect $Reference 2>$null | Out-Null
+    return $LASTEXITCODE -eq 0
+  } catch { return $false }
 }
 
 function Assert-ManagedDockerObject {
@@ -463,7 +478,8 @@ function Assert-PortAvailable {
 function Wait-ContainerHealthy {
   $deadline = [DateTime]::UtcNow.AddMinutes(2)
   do {
-    $status = "$(docker inspect --format '{{.State.Health.Status}}' $containerName 2>$null)".Trim()
+    try { $status = "$(docker inspect --format '{{.State.Health.Status}}' $containerName 2>$null)".Trim() }
+    catch { throw 'PostgreSQL container health cannot be inspected.' }
     if ($status -ceq 'healthy') { return }
     if ($status -ceq 'unhealthy') { throw 'PostgreSQL container reported unhealthy.' }
     Start-Sleep -Seconds 2
@@ -482,8 +498,7 @@ function New-ManagedContainer {
   $sourceMount = "type=bind,source=$repositoryRoot,target=/workspace,readonly"
   $dataMount = "type=volume,source=$volumeName,target=/var/lib/postgresql/data"
   $immutableImage = "pgvector/pgvector@$($State.image_digest)"
-  & docker image inspect $immutableImage 2>$null | Out-Null
-  if ($LASTEXITCODE -ne 0) {
+  if (-not (Test-DockerImage -Reference $immutableImage)) {
     Invoke-External -Description 'immutable pgvector image pull' -Operation { docker pull $immutableImage | Out-Null }
   }
   Invoke-External -Description 'PostgreSQL container creation' -Operation {
@@ -508,7 +523,8 @@ function Ensure-ManagedContainerRunning {
     New-ManagedContainer -Root $Root -State $State
   }
   Assert-ManagedDockerObject -Kind container -Name $containerName
-  $running = "$(docker inspect --format '{{.State.Running}}' $containerName 2>$null)".Trim()
+  try { $running = "$(docker inspect --format '{{.State.Running}}' $containerName 2>$null)".Trim() }
+  catch { throw 'Managed PostgreSQL container state cannot be inspected.' }
   if ($running -cne 'true') {
     Invoke-External -Description 'Managed PostgreSQL container start' -Operation { docker container start $containerName | Out-Null }
   }
@@ -538,8 +554,10 @@ function Install-DatabaseEnvironment {
   Assert-PortAvailable -Port $HostPort
   Initialize-StateRoot -Root $Root
   Invoke-External -Description 'pgvector image pull' -Operation { docker pull $PgvectorImage | Out-Null }
-  $digestLine = @(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' $PgvectorImage |
-    Where-Object { $_ -match '@sha256:[a-f0-9]{64}$' } | Select-Object -First 1)
+  try {
+    $digestLine = @(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' $PgvectorImage |
+      Where-Object { $_ -match '@sha256:[a-f0-9]{64}$' } | Select-Object -First 1)
+  } catch { throw 'Pulled pgvector image metadata cannot be inspected.' }
   if ($digestLine.Count -ne 1) { throw 'Pulled pgvector image has no immutable repository digest.' }
   $imageDigest = (($digestLine[0].Trim()) -split '@', 2)[1]
   if (-not [string]::IsNullOrWhiteSpace($ExpectedImageDigest) -and $imageDigest -cne "sha256:$ExpectedImageDigest") {
@@ -614,7 +632,9 @@ function Invoke-EnvironmentVerification {
     Remove-Item Env:UE_MCP_TEST_POSTGRES_DATABASE -ErrorAction SilentlyContinue
     Remove-Item Env:UE_MCP_DATABASE_DSN_FILE -ErrorAction SilentlyContinue
   }
-  $extensionVersion = "$(docker exec $containerName psql --username=$databaseUser --dbname=$databaseName --no-psqlrc --tuples-only --no-align --command "SELECT extversion FROM pg_extension WHERE extname = 'vector';")".Trim()
+  try {
+    $extensionVersion = "$(docker exec $containerName psql --username=$databaseUser --dbname=$databaseName --no-psqlrc --tuples-only --no-align --command "SELECT extversion FROM pg_extension WHERE extname = 'vector';")".Trim()
+  } catch { throw 'pgvector extension version verification failed.' }
   if ($LASTEXITCODE -ne 0 -or $extensionVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
     throw 'pgvector extension version verification failed.'
   }
@@ -772,8 +792,10 @@ function Remove-ToolInstalledDependencies {
     if (-not (Test-DockerEngine)) { throw 'Docker must be running to prove no unmanaged Docker data exists before uninstall.' }
     $otherContainers = @(docker container ls --all --format '{{.Names}}' | Where-Object { $_ -and $_ -cne $containerName })
     $otherVolumes = @(docker volume ls --format '{{.Name}}' | Where-Object { $_ -and $_ -cne $volumeName })
-    $managedImageIds = if ([string]::IsNullOrWhiteSpace($ImageRequested)) { @() } else {
-      @(docker image inspect --format '{{.Id}}' $ImageRequested 2>$null | Select-Object -Unique)
+    $managedImageIds = if ([string]::IsNullOrWhiteSpace($ImageRequested) -or
+        -not (Test-DockerImage -Reference $ImageRequested)) { @() } else {
+      try { @(docker image inspect --format '{{.Id}}' $ImageRequested 2>$null | Select-Object -Unique) }
+      catch { throw 'Managed Docker image metadata cannot be inspected.' }
     }
     $otherImages = @(docker image ls --all --quiet | Select-Object -Unique | Where-Object { $_ -and $_ -notin $managedImageIds })
     if ($otherContainers.Count -ne 0 -or $otherVolumes.Count -ne 0 -or $otherImages.Count -ne 0) {
@@ -835,7 +857,7 @@ function Uninstall-Environment {
     Invoke-External -Description 'Managed volume removal' -Operation { docker volume rm $volumeName | Out-Null }
   }
   if (Test-DockerEngine) {
-    & docker image rm $State.image_requested 2>$null | Out-Null
+    try { & docker image rm $State.image_requested 2>$null | Out-Null } catch { }
   }
   Remove-ToolInstalledDependencies -DependencyRecord $dependencyRecord -ImageRequested $State.image_requested
   Remove-ManagedFiles -Root $Root
@@ -847,6 +869,7 @@ function Uninstall-Environment {
 function Get-EnvironmentStatus {
   param([string]$Root)
 
+  Refresh-ProcessPath
   $node = Get-ToolVersion -Name 'node' -Operation { node --version }
   $npm = Get-ToolVersion -Name 'npm' -Operation { npm --version }
   $winget = Get-ToolVersion -Name 'winget' -Operation { winget --version }
@@ -861,7 +884,10 @@ function Get-EnvironmentStatus {
   if ($dockerReady) {
     $container = Test-DockerObject -Kind container -Name $containerName
     $volume = Test-DockerObject -Kind volume -Name $volumeName
-    if ($container) { $health = "$(docker inspect --format '{{.State.Health.Status}}' $containerName 2>$null)".Trim() }
+    if ($container) {
+      try { $health = "$(docker inspect --format '{{.State.Health.Status}}' $containerName 2>$null)".Trim() }
+      catch { $health = 'unavailable' }
+    }
   }
   [pscustomobject]@{
     Status = if ($null -eq $state) { 'NotInstalled' } else { $state.status }

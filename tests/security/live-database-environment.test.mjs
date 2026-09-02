@@ -26,6 +26,9 @@ test('environment manager detects exact dependencies and requires confirmation b
   assert.match(manager, /Get-AuthenticodeSignature -LiteralPath \$installer/);
   assert.match(manager, /nodeInstallerSha256 = '[a-f0-9]{64}'/);
   assert.match(manager, /SupportsShouldProcess/);
+  assert.match(manager, /function Test-DockerEngine[\s\S]*?catch \{ return \$false \}/u);
+  assert.match(manager, /function Test-DockerImage/);
+  assert.doesNotMatch(manager, /Split-Path\s+-LiteralPath[^\r\n]*-Parent/);
 });
 
 test('database provisioning is fixed, loopback-only, secret-file based and digest recorded', () => {

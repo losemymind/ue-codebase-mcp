@@ -87,6 +87,7 @@ test('deployment preflight is non-mutating and rejects unsafe inputs before depl
   assert.match(preflight, /config --images/);
   assert.match(preflight, /IsPathFullyQualified/);
   assert.match(preflight, /FileAttributes\]::ReparsePoint/);
+  assert.doesNotMatch(preflight, /Split-Path\s+-LiteralPath[^\r\n]*-Parent/);
   assert.match(preflight, /EnvironmentFile TLS bindings must match/);
   assert.match(preflight, /secret bindings must exactly match/);
   assert.match(preflight, /ExpectedControlPlaneApprovalSha256 must not be a placeholder/);

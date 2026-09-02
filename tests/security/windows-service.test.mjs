@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const script = await readFile('deploy/windows-service/manage-agent-service.ps1', 'utf8');
+assert.doesNotMatch(script, /Split-Path\s+-LiteralPath[^\r\n]*-Parent/);
 
 test('Windows service management is fixed-name, hash-bound and path-confined', () => {
   assert.match(script, /ValidateSet\('Plan', 'Install', 'Update', 'Rollback', 'Uninstall'\)/);
