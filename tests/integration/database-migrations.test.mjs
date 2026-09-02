@@ -49,7 +49,7 @@ function tableNames(sql, operation) {
 
 test('migration manifest is contiguous and every migration is transactional', async () => {
   assert.equal(manifest.schema, 'ue_mcp');
-  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(manifest.migrations.map(({ version }) => version), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
   for (const migration of manifest.migrations) {
     for (const direction of ['up', 'down']) {
@@ -57,6 +57,10 @@ test('migration manifest is contiguous and every migration is transactional', as
       assert.match(sql, /^BEGIN;\n/);
       assert.match(sql, /\nCOMMIT;\n$/);
       assert.doesNotMatch(sql, /DROP[^;]*\bCASCADE\b/);
+      if (direction === 'up') {
+        assert.match(sql, /INSERT INTO ue_mcp\.schema_migrations \(version, name, checksum\)/);
+        assert.match(sql, /decode\(:'migration_checksum', 'hex'\)/);
+      }
     }
   }
 });
@@ -169,7 +173,29 @@ test('P1-17 migration makes correlation and trace audit evidence durable and ind
   assert.match(up, /audit_events_trace_time_idx/);
   assert.match(up, /audit_events_resource_time_idx/);
   assert.match(up, /VALUES \(8, 'p1_17_observability_audit'/);
+  assert.match(up, /decode\(:'migration_checksum', 'hex'\)/);
   assert.match(down, /version = 8 AND name = 'p1_17_observability_audit'/);
+});
+
+test('P1-18 auth migration adds explicit SVN identities and path-scoped snapshots without granting legacy users', async () => {
+  const up = await readFile(path.join(migrationRoot, '0009_p1_18_auth_persistence.up.sql'), 'utf8');
+  const down = await readFile(path.join(migrationRoot, '0009_p1_18_auth_persistence.down.sql'), 'utf8');
+  assert.match(up, /ADD COLUMN svn_subject text;/);
+  assert.doesNotMatch(up, /UPDATE ue_mcp\.users[\s\S]*svn_subject/u);
+  assert.match(up, /CREATE TABLE ue_mcp\.service_principals/);
+  assert.match(up, /ADD COLUMN path_prefix text;/);
+  assert.match(up, /path_prefix IS NULL OR/);
+  assert.match(up, /position\(E'\\\\' IN path_prefix\) = 0/);
+  assert.match(up, /svn_access_snapshots_legacy_scope_unique/);
+  assert.match(up, /WHERE path_prefix IS NULL/);
+  assert.match(up, /svn_access_snapshots_path_scope_unique/);
+  assert.match(up, /WHERE path_prefix IS NOT NULL/);
+  assert.match(up, /length\(path_prefix\) DESC/);
+  assert.match(up, /VALUES \(9, 'p1_18_auth_persistence'/);
+  assert.match(down, /cannot remove path authorization while multiple path snapshots exist/);
+  assert.match(down, /DROP TABLE ue_mcp\.service_principals/);
+  assert.match(down, /DROP COLUMN svn_subject/);
+  assert.match(down, /version = 9 AND name = 'p1_18_auth_persistence'/);
 });
 
 test('core migration covers phase 1 sections 5.1 through 5.3 and 5.5 only', async () => {

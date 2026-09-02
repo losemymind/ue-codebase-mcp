@@ -108,6 +108,21 @@ test('transactions commit successful work and roll back failures before releasin
   assert.deepEqual(rollbackFailure.clients[0].released, [true]);
 });
 
+test('authorization snapshots can require read-only repeatable-read transactions', async () => {
+  const pool = new FakePool((query) => typeof query === 'string'
+    ? { rows: [], rowCount: null } : { rows: [{ value: query.values[0] }], rowCount: 1 });
+  const database = new PostgresRuntimeDatabase(pool, { approved_statements: approved, expected_migrations: migrations });
+  assert.equal(await database.transaction(async (transaction) => {
+    const value = await transaction.execute(approved[0], [11]);
+    return value.rows[0].value;
+  }, { isolation: 'repeatable-read', read_only: true }), 11);
+  assert.deepEqual(pool.clients[0].calls.map((query) => typeof query === 'string' ? query : query.name),
+    ['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'test-select-v1', 'COMMIT']);
+  await assert.rejects(database.transaction(async () => undefined, { isolation: 'serializable', read_only: true }),
+    (error) => error.code === 'invalid-configuration');
+  assert.equal(pool.clients.length, 1);
+});
+
 test('readiness requires the exact contiguous migration identity and checksums', async () => {
   const expectedRows = migrations.map((migration) => ({ ...migration }));
   const pool = new FakePool(() => ({ rows: expectedRows, rowCount: expectedRows.length }));
@@ -127,7 +142,7 @@ test('readiness requires the exact contiguous migration identity and checksums',
 
 test('migration policy hashes every checked-in migration in contiguous manifest order', async () => {
   const policy = await loadExpectedMigrations(path.resolve('database/migrations/manifest.json'));
-  assert.equal(policy.length, 8);
+  assert.equal(policy.length, 9);
   assert.deepEqual(policy.map(({ version, name }) => ({ version, name })), [
     { version: 1, name: 'bootstrap' },
     { version: 2, name: 'phase_1_core' },
@@ -137,6 +152,7 @@ test('migration policy hashes every checked-in migration in contiguous manifest 
     { version: 6, name: 'p1_14_generation_publication' },
     { version: 7, name: 'p1_16_durable_job_leases' },
     { version: 8, name: 'p1_17_observability_audit' },
+    { version: 9, name: 'p1_18_auth_persistence' },
   ]);
   assert.ok(policy.every((migration) => /^[a-f0-9]{64}$/u.test(migration.checksum)));
 });

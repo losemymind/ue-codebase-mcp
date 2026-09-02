@@ -1227,7 +1227,7 @@ Deliverables:
 - The database URI is read only from an absolute regular secret file. Every path component is checked against symbolic-link/junction redirection, the opened file identity is rechecked to reduce replacement races, UTF-8 and size are bounded, credentials are required, and `sslmode` must be explicit. URI content and driver diagnostics are never returned in runtime errors.
 - Runtime queries require a pre-approved statement name and exact SQL text, use parameter arrays and object rows, and enforce value/result bounds. Transactions acquire one client, issue `BEGIN`/`COMMIT`, always release it, roll back operation failures and destroy the client if rollback fails.
 - Readiness queries the complete `ue_mcp.schema_migrations` history and requires the exact contiguous version, name and SHA-256 checksum policy computed from the packaged manifest and every checked-in up migration. The deterministic build now carries those migration artifacts.
-- `npm run control-plane:db:test:live` is an explicit non-mutating live harness. Given `UE_MCP_DATABASE_DSN_FILE`, it checks the real pool, all eight migrations, a fixed named query, a transaction and shutdown while emitting only a uniform pass/fail message.
+- `npm run control-plane:db:test:live` is an explicit non-mutating live harness. Given `UE_MCP_DATABASE_DSN_FILE`, it checks the real pool, every manifest migration, a fixed named query, a transaction and shutdown while emitting only a uniform pass/fail message.
 
 Verification:
 
@@ -1248,3 +1248,37 @@ Acceptance blockers and next work:
 - The generic runtime does not itself approve application SQL. Next implementation work is to bind reviewed fixed statements for bearer-token persistence and authorization snapshots, followed by retrieval/tool routing, audit transaction expectations and object storage. Until those adapters are assembled, there is still no runnable production `main` or truthful control-plane image.
 - A representative PostgreSQL plus pgvector environment must run both the destructive disposable migration test and the non-mutating control-plane runtime harness. Those future results must record the actual approved server and artifact context rather than reclassifying unit tests as live evidence.
 - Production TLS mode, database identity/grants, secret-file ACLs, image/SBOM/provenance approval and fixed-device deployment evidence remain external inputs. Solo self-attestation remains G1-ineligible and Phase 2 remains frozen.
+
+## P1-18 authentication and authorization PostgreSQL checkpoint — production assembly still incomplete
+
+Status: fixed-statement bearer-token persistence and authorization snapshot adapters were implemented on 2026-09-02. A ninth migration closes the previously recorded durable SVN path-scope and principal-mapping gaps without granting legacy identities or snapshots new access. These adapters are production-capable boundaries, but retrieval/tool routing, the request-plus-audit transaction contract, object storage and complete process assembly remain absent. P1-18 remains in progress and is not accepted.
+
+Deliverables:
+
+- `services/control-plane/src/auth-postgres.ts` exports one immutable eleven-statement SQL policy plus `PostgresBearerTokenRepository` and `PostgresAuthorizationRepository`. Callers cannot supply SQL, table names, clauses or result shapes. Inputs, rows, token hashes, scopes, identifiers, timestamps, revisions and paths are bounded and validated; driver details are reduced to stable content-safe errors.
+- Bearer token lookup and insert preserve only the existing memory-hard token hash. Rotation updates the exact active, unexpired current token and inserts its replacement in one transaction, validates unchanged owner/scope identity and rolls back on any conflict or short write. Revocation is idempotent for an existing token and cannot predate creation.
+- Authorization reads run on one connection using `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`. The read view expires when its callback returns, so a retained view cannot run queries after commit. User, active-team, service, project, repository, permission and SVN rows are all validated before reaching the policy engine; missing, malformed or failed reads deny access.
+- Migration `0009_p1_18_auth_persistence` adds a nullable explicit `users.svn_subject`, a durable enabled/disabled service-principal mapping and normalized SVN `path_prefix` evidence. Existing users retain a null SVN mapping and existing pathless snapshots retain a null path scope; neither participates in authorization until an administrator writes reviewed explicit values. Path lookup chooses the most specific exact-or-ancestor prefix, including an explicit empty root prefix, so a more specific deny overrides a broader read.
+- The destructive migration workflow now targets version 9, independently rolls P1-18 back to version 8 and checks that its path/service state is removed. Migration static coverage now requires every up migration to bind the runner-supplied SHA-256. That check exposed and corrected the previously unexecuted `0008` checksum insertion defect; no live database had been claimed or supplied with version 8 applied.
+- The generic PostgreSQL runtime accepts only one optional transaction profile, the exact read-only repeatable-read profile used above. Default transactions retain the existing read-committed behavior; arbitrary isolation or read/write options are rejected before a connection is acquired.
+
+Verification:
+
+```powershell
+node --test --test-reporter=spec tests/unit/auth-postgres.test.mjs tests/unit/postgres-runtime.test.mjs tests/integration/database-migrations.test.mjs
+npm run ci
+npm run release:check
+Get-Command psql -ErrorAction SilentlyContinue
+```
+
+- Focused migration/runtime/authentication/authorization coverage passed 25/25 before final integration. It covers the fixed SQL policy, hash/scopes/timestamp row validation, atomic fenced rotation, conflict/error redaction, service identity mapping, read-only repeatable-read ordering, path-prefix SQL, missing mappings, malformed rows, expired read views, nine contiguous checksummed migrations and unsafe secret/runtime inputs.
+- Full repository CI passed 249/249. Formatting, security-boundary lint, governance synchronization, build, license/notices policy and CycloneDX generation passed; the SBOM remains 15 dependency components. Release policy passed for `0.1.0`.
+- `psql` and a representative PostgreSQL plus pgvector endpoint remain unavailable on this workstation. The corrected migrations, transaction mode and SQL adapters therefore have static and synthetic evidence only; no live PostgreSQL syntax, rollback, isolation, query-plan or ACL-negative success is claimed.
+
+Acceptance blockers and next work:
+
+- Operators must explicitly provision each OIDC-to-SVN or service-to-SVN subject mapping and ingest fresh path-scoped snapshots. Null legacy mappings/scopes deliberately deny. The authoritative SVN authz collector, its freshness/update workflow and representative allow/deny live tests remain external production work.
+- The control plane still lacks fixed-statement retrieval/tool routing, the atomic audit expectation for each request, object-store adapters, approved telemetry export and a production entrypoint. No truthful control-plane image can be assembled until those boundaries are complete and reviewed.
+- A disposable representative PostgreSQL plus pgvector environment must run the complete version-9 migration/rollback rehearsal and the non-mutating runtime harness. Production grants, TLS identity, secret-file ACLs, image approval and fixed-device evidence remain external inputs. Solo self-attestation remains G1-ineligible and Phase 2 remains frozen.
+
+Next work: keep the single `codex/phase-1-foundation` line. Bind the existing authorized retrieval and MCP tool contracts to reviewed fixed PostgreSQL statements, then enforce the request-plus-audit transaction expectation without weakening the explicit live database, ACL collector, image or fixed-device blockers. Do not enter Phase 2.

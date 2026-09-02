@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/host.ts",
+    "./auth-postgres": "./src/auth-postgres.ts",
     "./postgres": "./src/postgres.ts"
   },
   "engines": {

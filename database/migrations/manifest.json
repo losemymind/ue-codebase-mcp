@@ -48,6 +48,12 @@
       "name": "p1_17_observability_audit",
       "up": "0008_p1_17_observability_audit.up.sql",
       "down": "0008_p1_17_observability_audit.down.sql"
+    },
+    {
+      "version": 9,
+      "name": "p1_18_auth_persistence",
+      "up": "0009_p1_18_auth_persistence.up.sql",
+      "down": "0009_p1_18_auth_persistence.down.sql"
     }
   ]
 }

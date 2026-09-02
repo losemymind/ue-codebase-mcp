@@ -17,6 +17,7 @@ await import('../apps/mcp-server/src/server.ts');
 await import('../apps/mcp-server/src/operations-http.ts');
 await import('../apps/mcp-server/src/streamable-http.ts');
 await import('../services/control-plane/src/host.ts');
+await import('../services/control-plane/src/auth-postgres.ts');
 await import('../services/control-plane/src/postgres.ts');
 await import('../workers/svn-adapter/src/index.ts');
 await import('../workers/windows-agent/src/index.ts');

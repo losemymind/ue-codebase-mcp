@@ -43,7 +43,7 @@ This exercises an empty upgrade, upgrade from bootstrap version 1, negative data
 constraints, rollback to version 1, re-upgrade to version 2, and full rollback.
 It is intentionally opt-in and is not replaced by a mocked production result.
 
-After all eight Phase 1 migrations are applied, place an explicit PostgreSQL URI
+After all nine Phase 1 migrations are applied, place an explicit PostgreSQL URI
 in a regular secret file. The URI must contain credentials and an explicit
 `sslmode` of `disable`, `require`, `verify-ca`, or `verify-full`; select a mode
 that matches the approved deployment network and certificate policy. Set only

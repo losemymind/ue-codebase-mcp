@@ -17,6 +17,11 @@ export interface FixedSqlResult<Row> {
   readonly row_count: number;
 }
 
+export interface PostgresTransactionOptions {
+  readonly isolation: 'repeatable-read';
+  readonly read_only: true;
+}
+
 export interface ExpectedMigration {
   readonly version: number;
   readonly name: string;
@@ -99,6 +104,13 @@ function invalid(): never {
 function exactObject(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     && Object.keys(value).length === keys.length && Object.keys(value).every((key) => keys.includes(key));
+}
+
+function transactionCommand(options: PostgresTransactionOptions | undefined): string {
+  if (options === undefined) return 'BEGIN';
+  if (!exactObject(options, ['isolation', 'read_only'])
+      || options.isolation !== 'repeatable-read' || options.read_only !== true) invalid();
+  return 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY';
 }
 
 function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {
@@ -204,15 +216,17 @@ export class PostgresRuntimeDatabase {
   }
 
   async transaction<Result>(operation: (transaction: { execute<Row>(statement: FixedSqlStatement,
-    values: readonly PostgresValue[]): Promise<FixedSqlResult<Row>> }) => Promise<Result>): Promise<Result> {
+    values: readonly PostgresValue[]): Promise<FixedSqlResult<Row>> }) => Promise<Result>,
+  options?: PostgresTransactionOptions): Promise<Result> {
     if (this.#closed) throw new PostgresRuntimeError('runtime-closed');
     if (typeof operation !== 'function') invalid();
+    const begin = transactionCommand(options);
     let client: DriverClient;
     try { client = await this.#pool.connect(); } catch { throw new PostgresRuntimeError('database-unavailable'); }
     let destroy = false;
     let began = false;
     try {
-      await client.query('BEGIN');
+      await client.query(begin);
       began = true;
       const transaction = Object.freeze({ execute: <Row>(statement: FixedSqlStatement, values: readonly PostgresValue[]) =>
         execute<Row>(client, statement, values, this.#statements, this.#maximumRows) });

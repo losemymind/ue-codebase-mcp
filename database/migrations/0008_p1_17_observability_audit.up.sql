@@ -35,7 +35,7 @@ CREATE INDEX audit_events_trace_time_idx ON ue_mcp.audit_events (trace_id, occur
 CREATE INDEX audit_events_resource_time_idx ON ue_mcp.audit_events (resource_type, resource_id, occurred_at DESC)
   WHERE resource_type IS NOT NULL AND resource_id IS NOT NULL;
 
-INSERT INTO ue_mcp.schema_migrations (version, name)
-VALUES (8, 'p1_17_observability_audit');
+INSERT INTO ue_mcp.schema_migrations (version, name, checksum)
+VALUES (8, 'p1_17_observability_audit', decode(:'migration_checksum', 'hex'));
 
 COMMIT;

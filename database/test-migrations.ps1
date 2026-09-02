@@ -41,10 +41,18 @@ try {
     throw 'Bootstrap migration did not produce version 1.'
   }
 
-  Invoke-Runner 'up' 8
+  Invoke-Runner 'up' 9
   & $PsqlPath -X -v ON_ERROR_STOP=1 "--dbname=$DatabaseName" -f $constraintTest
   if ($LASTEXITCODE -ne 0) {
     throw "Live constraint test failed with exit code $LASTEXITCODE"
+  }
+
+  Invoke-Runner 'down' 8
+  if ((Invoke-Query "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'ue_mcp' AND table_name = 'svn_access_snapshots' AND column_name = 'path_prefix';") -ne '0') {
+    throw 'P1-18 rollback left path authorization state behind.'
+  }
+  if ((Invoke-Query "SELECT to_regclass('ue_mcp.service_principals') IS NULL;") -ne 't') {
+    throw 'P1-18 rollback left service principals behind.'
   }
 
   Invoke-Runner 'down' 7
@@ -82,9 +90,9 @@ try {
     throw 'Core rollback left business tables behind.'
   }
 
-  Invoke-Runner 'up' 8
-  if ((Invoke-Query 'SELECT max(version) FROM ue_mcp.schema_migrations;') -ne '8') {
-    throw 'Upgrade after rollback did not restore version 8.'
+  Invoke-Runner 'up' 9
+  if ((Invoke-Query 'SELECT max(version) FROM ue_mcp.schema_migrations;') -ne '9') {
+    throw 'Upgrade after rollback did not restore version 9.'
   }
 } finally {
   if ((Invoke-Query "SELECT to_regnamespace('ue_mcp') IS NOT NULL;") -eq 't') {

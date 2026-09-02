@@ -5,6 +5,7 @@ SET LOCAL search_path = ue_mcp, public, pg_catalog;
 DO $$
 DECLARE
   project_id uuid;
+  repository_id uuid;
   user_id uuid;
   generation_id uuid;
 BEGIN
@@ -31,6 +32,36 @@ BEGIN
   INSERT INTO projects (slug, name, ue_version, created_by, updated_by)
   VALUES ('migration-test', 'Migration Test', '5.6', 'integration', 'integration')
   RETURNING id INTO project_id;
+
+  IF EXISTS (SELECT 1 FROM users WHERE id = user_id AND svn_subject IS NOT NULL) THEN
+    RAISE EXCEPTION 'migration invented an SVN subject for a legacy user';
+  END IF;
+
+  INSERT INTO repositories (
+    project_id, canonical_url, role, credential_ref, created_by, updated_by
+  ) VALUES (
+    project_id, 'https://svn.example.invalid/project', 'game', 'secret://test/svn', 'integration', 'integration'
+  ) RETURNING id INTO repository_id;
+
+  BEGIN
+    INSERT INTO svn_access_snapshots (
+      repository_id, revision, subject, effective_access, captured_at, expires_at, path_prefix
+    ) VALUES (
+      repository_id, 1, 'integration-subject', 'read', clock_timestamp(),
+      clock_timestamp() + interval '5 minutes', '../private'
+    );
+    RAISE EXCEPTION 'unsafe SVN path prefix was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO service_principals (id, svn_subject, created_by, updated_by)
+    VALUES ('invalid/service', 'service-subject', 'integration', 'integration');
+    RAISE EXCEPTION 'unsafe service principal identifier was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
 
   INSERT INTO index_generations (
     project_id,
