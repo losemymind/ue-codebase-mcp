@@ -26,6 +26,7 @@ test('environment manager detects exact dependencies and requires confirmation b
   assert.match(manager, /Get-AuthenticodeSignature -LiteralPath \$installer/);
   assert.match(manager, /nodeInstallerSha256 = '[a-f0-9]{64}'/);
   assert.match(manager, /SupportsShouldProcess/);
+  assert.match(manager, /Get-Command -Name \$Name -CommandType Application[^\r\n]*Select-Object -First 1/);
   assert.match(manager, /Get-Command -Name Get-FileHash -ErrorAction Stop/);
   assert.match(manager, /Join-Path \$PSHOME 'Modules\\Microsoft\.PowerShell\.Utility/);
   assert.match(manager, /function Test-DockerEngine[\s\S]*?catch \{ return \$false \}/u);
@@ -79,6 +80,8 @@ test('uninstall backs up and validates data before removing only fixed managed r
   assert.match(manager, /AcceptDataLoss is required with DiscardData/);
   assert.match(manager, /docker container rm --force \$containerName/);
   assert.match(manager, /docker volume rm \$volumeName/);
+  assert.match(manager, /Managed state cleanup did not remove every expected file/);
+  assert.match(manager, /Environment state still exists after uninstall/);
   assert.match(manager, /Assert-ManagedDockerObject -Kind container/);
   assert.match(manager, /Assert-ManagedDockerObject -Kind volume/);
   assert.match(manager, /not owned by this environment; refusing to use or remove it/);

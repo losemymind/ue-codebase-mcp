@@ -137,7 +137,7 @@ function Refresh-ProcessPath {
 
 function Get-Application {
   param([Parameter(Mandatory = $true)][string]$Name)
-  return Get-Command -Name $Name -CommandType Application -ErrorAction SilentlyContinue
+  return Get-Command -Name $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 }
 
 function Invoke-External {
@@ -776,9 +776,13 @@ function Assert-ExplicitDataLoss {
 
 function Remove-ManagedFiles {
   param([string]$Root)
-  foreach ($name in @($stateFileName, $passwordFileName, $dsnFileName)) {
+  $managedNames = @('state.json', 'postgres-password', 'control-plane-database-dsn')
+  foreach ($name in $managedNames) {
     $path = Join-Path $Root $name
     if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force }
+  }
+  if (@($managedNames | Where-Object { Test-Path -LiteralPath (Join-Path $Root $_) -PathType Leaf }).Count -ne 0) {
+    throw 'Managed state cleanup did not remove every expected file.'
   }
   if ((Test-Path -LiteralPath $Root -PathType Container) -and @(Get-ChildItem -LiteralPath $Root -Force).Count -eq 0) {
     Remove-Item -LiteralPath $Root -Force
@@ -873,6 +877,9 @@ function Uninstall-Environment {
   Remove-ManagedFiles -Root $Root
   if ($RemoveManagedDependencies) { Remove-DependencyReceipt -Root $Root }
   else { Save-DependencyReceipt -Root $Root -NodeInstalledByTool $dependencyRecord.node_installed_by_tool -DockerInstalledByTool $dependencyRecord.docker_installed_by_tool }
+  if (Test-Path -LiteralPath (Get-StatePath -Root $Root) -PathType Leaf) {
+    throw 'Environment state still exists after uninstall.'
+  }
   [pscustomobject]@{ Status = 'Uninstalled'; BackupRequired = $hasVolume; DependenciesRemoved = [bool]$RemoveManagedDependencies }
 }
 
