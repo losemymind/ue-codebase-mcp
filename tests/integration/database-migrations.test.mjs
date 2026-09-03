@@ -172,6 +172,8 @@ test('P1-17 migration makes correlation and trace audit evidence durable and ind
   assert.match(up, /audit_events_correlation_time_idx/);
   assert.match(up, /audit_events_trace_time_idx/);
   assert.match(up, /audit_events_resource_time_idx/);
+  assert.match(up, /replace\(gen_random_uuid\(\)::text, '-', ''\)/);
+  assert.doesNotMatch(up, /gen_random_bytes|pgcrypto/);
   assert.match(up, /VALUES \(8, 'p1_17_observability_audit'/);
   assert.match(up, /decode\(:'migration_checksum', 'hex'\)/);
   assert.match(down, /version = 8 AND name = 'p1_17_observability_audit'/);
@@ -183,6 +185,8 @@ test('P1-18 auth migration adds explicit SVN identities and path-scoped snapshot
   assert.match(up, /ADD COLUMN svn_subject text;/);
   assert.doesNotMatch(up, /UPDATE ue_mcp\.users[\s\S]*svn_subject/u);
   assert.match(up, /CREATE TABLE ue_mcp\.service_principals/);
+  assert.match(up, /length\(id\) BETWEEN 1 AND 512/);
+  assert.doesNotMatch(up, /\{0,511\}/);
   assert.match(up, /ADD COLUMN path_prefix text;/);
   assert.match(up, /path_prefix IS NULL OR/);
   assert.match(up, /position\(E'\\\\' IN path_prefix\) = 0/);
@@ -202,6 +206,8 @@ test('core migration covers phase 1 sections 5.1 through 5.3 and 5.5 only', asyn
   const sql = await readFile(path.join(migrationRoot, '0002_phase_1_core.up.sql'), 'utf8');
   const bootstrap = await readFile(path.join(migrationRoot, '0001_bootstrap.up.sql'), 'utf8');
   assert.deepEqual(tableNames(sql, 'CREATE'), expectedTables);
+  assert.match(sql, /length\(credential_ref\) BETWEEN 1 AND 512/);
+  assert.doesNotMatch(sql, /\{0,511\}/);
 
   for (const phase2Table of ['assets', 'asset_packages', 'asset_graphs', 'asset_nodes', 'asset_pins', 'asset_edges']) {
     assert.doesNotMatch(sql, new RegExp(`CREATE TABLE ue_mcp\\.${phase2Table}\\b`));

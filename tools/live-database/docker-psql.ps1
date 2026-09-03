@@ -1,14 +1,16 @@
-[CmdletBinding()]
-param(
-  [Parameter(ValueFromRemainingArguments = $true)]
-  [string[]]$PsqlArgument
-)
-
 $ErrorActionPreference = 'Stop'
+$PsqlArgument = @($args)
 $container = $env:UE_MCP_TEST_POSTGRES_CONTAINER
 $database = $env:UE_MCP_TEST_POSTGRES_DATABASE
 $databaseUser = 'ue_mcp_test'
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$pathEntries = [System.Collections.Generic.List[string]]::new()
+foreach ($entry in @($env:Path, $machinePath, $userPath) -split ';') {
+  if (-not [string]::IsNullOrWhiteSpace($entry) -and $pathEntries -notcontains $entry) { $pathEntries.Add($entry) }
+}
+$env:Path = $pathEntries -join ';'
 
 function Test-FullyQualifiedPath {
   param([string]$Path)

@@ -10,8 +10,8 @@ ALTER TABLE ue_mcp.audit_events
 
 UPDATE ue_mcp.audit_events
 SET correlation_id = id,
-    trace_id = encode(gen_random_bytes(16), 'hex'),
-    span_id = encode(gen_random_bytes(8), 'hex')
+    trace_id = replace(gen_random_uuid()::text, '-', ''),
+    span_id = substring(replace(gen_random_uuid()::text, '-', '') from 1 for 16)
 WHERE correlation_id IS NULL;
 
 ALTER TABLE ue_mcp.audit_events

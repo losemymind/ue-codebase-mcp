@@ -19,6 +19,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$utilityModule = Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1'
+if (-not (Test-Path -LiteralPath $utilityModule -PathType Leaf)) {
+  throw 'The current PowerShell runtime is missing Microsoft.PowerShell.Utility.'
+}
+Import-Module -Name $utilityModule -Force -ErrorAction Stop
+Get-Command -Name Get-FileHash -ErrorAction Stop | Out-Null
 $containerName = 'ue-codebase-mcp-postgres-test'
 $volumeName = 'ue-codebase-mcp-postgres-test-data'
 $databaseName = 'ue_codebase_mcp_test'
@@ -122,7 +128,11 @@ function Confirm-Operation {
 function Refresh-ProcessPath {
   $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
   $user = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $env:Path = "$machine;$user"
+  $entries = [System.Collections.Generic.List[string]]::new()
+  foreach ($entry in @($env:Path, $machine, $user) -split ';') {
+    if (-not [string]::IsNullOrWhiteSpace($entry) -and $entries -notcontains $entry) { $entries.Add($entry) }
+  }
+  $env:Path = $entries -join ';'
 }
 
 function Get-Application {
@@ -549,7 +559,7 @@ function Install-DatabaseEnvironment {
   if ((Test-DockerObject -Kind container -Name $containerName) -or (Test-DockerObject -Kind volume -Name $volumeName)) {
     throw 'Fixed-name Docker resources exist without a matching state file; refusing to adopt or overwrite them.'
   }
-  Confirm-Operation -Message "Create a loopback-only PostgreSQL 17 + pgvector test environment on port $HostPort?" -Accepted:$AcceptInstall
+  Confirm-Operation -Message "Create a loopback-only PostgreSQL 17 + pgvector test environment on port ${HostPort}?" -Accepted:$AcceptInstall
   if (-not $PSCmdlet.ShouldProcess($containerName, 'Pull image and create managed database environment')) { return $null }
   Assert-PortAvailable -Port $HostPort
   Initialize-StateRoot -Root $Root
@@ -912,6 +922,7 @@ if (-not (Test-WindowsPlatform)) { throw 'The automated environment manager supp
 if ($env:PROCESSOR_ARCHITECTURE -cne 'AMD64') { throw 'The automated environment manager currently supports Windows x64 only.' }
 if ($BackupDirectory -and $DiscardData) { throw 'BackupDirectory and DiscardData cannot be used together.' }
 $resolvedStateRoot = Resolve-SafeRoot -Requested $StateRoot
+Refresh-ProcessPath
 
 switch ($Action) {
   'Status' { Get-EnvironmentStatus -Root $resolvedStateRoot }

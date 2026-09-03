@@ -116,7 +116,10 @@ CREATE TABLE ue_mcp.repositories (
   kind text NOT NULL DEFAULT 'svn' CHECK (kind = 'svn'),
   canonical_url text NOT NULL CHECK (canonical_url ~ '^https?://|^svn(\+ssh)?://'),
   role text NOT NULL CHECK (role IN ('engine', 'game', 'plugin', 'dependency')),
-  credential_ref text NOT NULL CHECK (credential_ref ~ '^[A-Za-z][A-Za-z0-9_.:/-]{0,511}$'),
+  credential_ref text NOT NULL CHECK (
+    length(credential_ref) BETWEEN 1 AND 512
+    AND credential_ref ~ '^[A-Za-z][A-Za-z0-9_.:/-]*$'
+  ),
   enabled boolean NOT NULL DEFAULT true,
   version integer NOT NULL DEFAULT 1 CHECK (version > 0),
   created_by text NOT NULL CHECK (length(created_by) BETWEEN 1 AND 512),

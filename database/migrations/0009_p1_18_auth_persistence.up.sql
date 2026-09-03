@@ -18,7 +18,10 @@ CREATE UNIQUE INDEX users_svn_subject_unique
   WHERE svn_subject IS NOT NULL;
 
 CREATE TABLE ue_mcp.service_principals (
-  id text PRIMARY KEY CHECK (id ~ '^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,511}$'),
+  id text PRIMARY KEY CHECK (
+    length(id) BETWEEN 1 AND 512
+    AND id ~ '^[A-Za-z0-9][A-Za-z0-9_.:@-]*$'
+  ),
   svn_subject text NOT NULL CHECK (
     length(svn_subject) BETWEEN 1 AND 512
     AND svn_subject !~ '[[:cntrl:]]'

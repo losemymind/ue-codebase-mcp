@@ -50,11 +50,16 @@ class FakePool {
 }
 
 test('runtime executes only pre-approved named parameterized statements', async () => {
-  const pool = new FakePool((query) => ({ rows: [{ value: query.values[0] }], rowCount: 1 }));
+  const pool = new FakePool((query) => {
+    assert.equal(Object.isFrozen(query), false);
+    query.driverNormalized = true;
+    return { rows: [{ value: query.values[0] }], rowCount: 1 };
+  });
   const database = new PostgresRuntimeDatabase(pool, { approved_statements: approved, expected_migrations: migrations });
   const result = await database.execute(approved[0], [7]);
   assert.deepEqual(result, { rows: [{ value: 7 }], row_count: 1 });
-  assert.deepEqual(pool.calls[0], { name: approved[0].name, text: approved[0].text, values: [7], rowMode: 'object' });
+  assert.deepEqual(pool.calls[0], { name: approved[0].name, text: approved[0].text, values: [7], rowMode: 'object',
+    driverNormalized: true });
   await assert.rejects(database.execute({ name: 'not-approved-v1', text: 'SELECT 1' }, []),
     (error) => error instanceof PostgresRuntimeError && error.code === 'statement-not-approved');
   await assert.rejects(database.execute({ ...approved[0], text: 'SELECT 2' }, []),
@@ -125,7 +130,10 @@ test('authorization snapshots can require read-only repeatable-read transactions
 
 test('readiness requires the exact contiguous migration identity and checksums', async () => {
   const expectedRows = migrations.map((migration) => ({ ...migration }));
-  const pool = new FakePool(() => ({ rows: expectedRows, rowCount: expectedRows.length }));
+  const pool = new FakePool((query) => {
+    assert.equal(Object.isFrozen(query), false);
+    return { rows: expectedRows, rowCount: expectedRows.length };
+  });
   const database = new PostgresRuntimeDatabase(pool, { approved_statements: approved, expected_migrations: migrations });
   assert.equal(await database.check(), true);
   assert.equal(pool.calls[0].name, 'control-plane-migration-readiness-v1');

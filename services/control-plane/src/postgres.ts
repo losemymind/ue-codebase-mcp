@@ -177,8 +177,8 @@ async function execute<Row>(queryable: DriverQueryable, statement: FixedSqlState
   const approved = validatedStatement(statement, policy);
   const parameters = validatedValues(values);
   try {
-    const queryResult = await queryable.query<Row>(Object.freeze({ name: approved.name, text: approved.text,
-      values: parameters, rowMode: 'object' }));
+    const queryResult = await queryable.query<Row>({ name: approved.name, text: approved.text,
+      values: parameters, rowMode: 'object' });
     return result(queryResult, maximumRows);
   } catch (error) {
     if (error instanceof PostgresRuntimeError) throw error;
@@ -247,8 +247,8 @@ export class PostgresRuntimeDatabase {
   async check(): Promise<boolean> {
     if (this.#closed) return false;
     try {
-      const value = await this.#pool.query<Record<string, unknown>>(Object.freeze({ ...READINESS_STATEMENT,
-        values: Object.freeze([]), rowMode: 'object', query_timeout: 1_500 }));
+      const value = await this.#pool.query<Record<string, unknown>>({ ...READINESS_STATEMENT,
+        values: Object.freeze([]), rowMode: 'object', query_timeout: 1_500 });
       const ready = migrationRows(value, this.#migrations);
       if (ready) this.#idleFailure = false;
       return ready && !this.#idleFailure;

@@ -26,8 +26,12 @@ test('environment manager detects exact dependencies and requires confirmation b
   assert.match(manager, /Get-AuthenticodeSignature -LiteralPath \$installer/);
   assert.match(manager, /nodeInstallerSha256 = '[a-f0-9]{64}'/);
   assert.match(manager, /SupportsShouldProcess/);
+  assert.match(manager, /Get-Command -Name Get-FileHash -ErrorAction Stop/);
+  assert.match(manager, /Join-Path \$PSHOME 'Modules\\Microsoft\.PowerShell\.Utility/);
   assert.match(manager, /function Test-DockerEngine[\s\S]*?catch \{ return \$false \}/u);
   assert.match(manager, /function Test-DockerImage/);
+  assert.match(manager, /\$resolvedStateRoot = Resolve-SafeRoot[^\r\n]*\r?\nRefresh-ProcessPath/);
+  assert.match(manager, /@\(\$env:Path, \$machine, \$user\) -split ';'/);
   assert.doesNotMatch(manager, /Split-Path\s+-LiteralPath[^\r\n]*-Parent/);
 });
 
@@ -44,6 +48,7 @@ test('database provisioning is fixed, loopback-only, secret-file based and diges
   assert.match(manager, /image_digest = \$imageDigest/);
   assert.match(manager, /Fixed-name Docker resources exist without a matching state file/);
   assert.match(manager, /immutableImage = "pgvector\/pgvector@\$\(\$State\.image_digest\)"/);
+  assert.match(manager, /port \$\{HostPort\}\?/);
   assert.doesNotMatch(manager, /password\s*=\s*\$password[\s\S]*ConvertTo-Json/u);
 });
 
@@ -53,6 +58,9 @@ test('verification uses the managed psql boundary and both real database harness
   assert.match(manager, /npm run control-plane:db:test:live/);
   assert.match(manager, /SELECT extversion FROM pg_extension WHERE extname = 'vector'/);
   assert.match(psql, /fixed managed test environment/);
+  assert.match(psql, /\$PsqlArgument = @\(\$args\)/);
+  assert.doesNotMatch(psql, /CmdletBinding/);
+  assert.match(psql, /@\(\$env:Path, \$machinePath, \$userPath\) -split ';'/);
   assert.match(psql, /psql "--username=\$databaseUser" @forward/);
   assert.match(psql, /only one bounded SELECT command is approved/);
   assert.match(psql, /outside the approved migration inputs/);
